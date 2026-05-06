@@ -53,7 +53,7 @@ def main():
     CLIP_NORM = env_float("CLIP_NORM", 1.0)
 
     GRAD_CHECKPOINT = env_bool("GRAD_CHECKPOINT", False)
-    USE_SPLIT_IDX = env_bool("USE_SPLIT_IDX", True) 
+    USE_SPLIT_IDX = env_bool("USE_SPLIT_IDX", False) 
     USE_LORA = env_bool("USE_LORA", True)
     LORA_R = env_int("LORA_R", 16)
     LORA_ALPHA = env_int("LORA_ALPHA", 32)
@@ -103,9 +103,9 @@ def main():
     # Dataset
     if USE_SPLIT_IDX:
         full_ds = full_ds.add_column("orig_idx", list(range(len(full_ds))))
-        train_idx = np.load("../data/split/imagenet/train_idx.npy")
-        val_idx   = np.load("../data/split/imagenet/val_idx.npy")
-        test_idx  = np.load("../data/split/imagenet/test_idx.npy")
+        train_idx = np.load("medmap/data/split/imagenet/train_idx.npy")
+        val_idx   = np.load("medmap/data/split/imagenet/val_idx.npy")
+        test_idx  = np.load("medmap/data/split/imagenet/test_idx.npy")
 
         train_ds = full_ds.select(train_idx)
         val_ds   = full_ds.select(val_idx)
@@ -193,7 +193,11 @@ def main():
             selective_dp=SELECTIVE_DP
         )
 
-    trainer = get_trainer(use_dp=USE_DP, **trainer_kwargs)
+    trainer = get_trainer(
+        use_dp=USE_DP,
+        loss_mode="decomposed" if USE_DP else "standard",
+        **trainer_kwargs,
+    )
     trainer.model_accepts_loss_kwargs = False # force HF Trainer to divide loss by grad_acc steps
 
     split_cb = SplitEvalCallback(
