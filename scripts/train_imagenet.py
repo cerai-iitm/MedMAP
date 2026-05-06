@@ -12,7 +12,7 @@ from scripts._bootstrap import setup_project_paths
 REPO_ROOT = setup_project_paths()
 
 from medmap.utils.core import env_str, env_int, env_float, env_bool, seed_everything, get_formatted_datetime_string
-from medmap.data.dataset import build_dataset
+from medmap.data.dataset import build_imagenet_dataset
 from medmap.data.collators import SmolVLMHeteroNoDummyCollator
 from medmap.data.metrics import compute_metrics_fn
 from medmap.models.smolvlm import setup_model
@@ -97,7 +97,7 @@ def main():
     config = SmolVLMConfig.from_pretrained(MODEL_NAME, attn_implementation="eager")
     config.image_token_id = processor.tokenizer.convert_tokens_to_ids("<image>")
 
-    full_ds, num_classes, class_names = build_dataset(CAPTIONS_JSON, ROOT_ZIP_PATH, TRAIN_TXT, use_tiny=True)
+    full_ds, num_classes, class_names = build_imagenet_dataset(CAPTIONS_JSON, ROOT_ZIP_PATH, TRAIN_TXT, use_tiny=True)
     full_ds = full_ds.cast_column("image_path", DatasetsImage(decode=True))
     
     # Dataset

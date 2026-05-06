@@ -1,4 +1,5 @@
 import torch
+import torch.nn as nn
 from transformers import Trainer
 from dp_transformers.dp_utils import OpacusDPTrainer
 
@@ -134,6 +135,31 @@ class AccLoggingMixin:
 
             self._tr_correct = 0
             self._tr_total = 0
+    
+    def save_model(self, output_dir=None, _internal_call=False):
+        """Safely unties weights before saving to avoid HF Serialization errors."""
+        output_dir = output_dir or self.args.output_dir
+        
+        unwrapped = self.model
+        for attr in ("module", "base_model", "model"):
+            unwrapped = getattr(unwrapped, attr, unwrapped)
+        backbone = getattr(unwrapped, "backbone", unwrapped)
+        
+        try:
+            lm_head = backbone.lm_head
+            embed_w = backbone.model.language_model.embed_tokens.weight
+            tied = lm_head.weight.data_ptr() == embed_w.data_ptr()
+        except AttributeError:
+            tied = False
+        
+        if tied:
+            lm_head.weight = nn.Parameter(lm_head.weight.clone())
+        
+        try:
+            super().save_model(output_dir, _internal_call)
+        finally:
+            if tied:
+                lm_head.weight = backbone.model.language_model.embed_tokens.weight
 
 
 class StandardTrainer(AccLoggingMixin, Trainer):

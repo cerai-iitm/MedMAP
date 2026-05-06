@@ -3,6 +3,8 @@ import os
 import torch
 import numpy as np
 from PIL import Image
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
 
 class SmolVLMHeteroNoDummyCollator:
     def __init__(self, processor, text_key: str = "prompt", image_key: str = "image_path",
@@ -152,3 +154,69 @@ class SmolVLMHeteroNoDummyCollator:
         enc["position_ids"] = pos.unsqueeze(0).repeat(B, 1)
 
         return enc
+    
+@dataclass
+class Gemma3HeteroNoDummyCollator:
+    processor: Any
+    text_key: str = "text"
+    image_key: str = "image"
+    labels_key: str = "labels"
+    max_length: int = 512
+    num_labels: int = 12
+    pad_to_multiple_of: Optional[int] = 8
+    want_image: bool = True
+    want_text: bool = True
+    fallback_empty_text: str = ""
+
+    def _as_image_list(self, img) -> List[Any]:
+        if img is None: return []
+        if isinstance(img, (list, tuple)): return [x for x in img if x is not None]
+        return [img]
+
+    def _prompt_with_boi(self, text: str, n_imgs: int, use_text: bool) -> str:
+        boi = getattr(self.processor, "boi_token", getattr(self.processor.tokenizer, "boi_token", None))
+        if n_imgs <= 0: return text if use_text else self.fallback_empty_text
+        boi_block = " ".join([boi] * n_imgs)
+        return f"{boi_block} {text.strip()}" if use_text and text.strip() else boi_block
+
+    def __call__(self, features: List[Dict[str, Any]]) -> Dict[str, torch.Tensor]:
+        tok = self.processor.tokenizer
+        B = len(features)
+        
+        labels_list, img_map, img_texts, img_nested, txt_map, txt_texts = [], [], [], [], [], []
+        for i, f in enumerate(features):
+            y = f.get(self.labels_key, None)
+            labels_list.append(torch.tensor([float("nan") if v is None else float(v) for v in y], dtype=torch.float32))
+            
+            raw_text, raw_img = f.get(self.text_key, ""), f.get(self.image_key, None)
+            imgs = self._as_image_list(raw_img)
+            
+            use_img, use_txt = self.want_image and len(imgs) > 0, self.want_text and bool(raw_text.strip())
+            
+            if use_img:
+                img_map.append(i); img_texts.append(self._prompt_with_boi(raw_text, len(imgs), use_txt)); img_nested.append(imgs)
+            else:
+                txt_map.append(i); txt_texts.append(raw_text.strip() if use_txt else self.fallback_empty_text)
+
+        per_sample = [None] * B
+        keep_keys = ("input_ids", "attention_mask", "token_type_ids")
+        
+        if txt_map:
+            enc_txt = self.processor(text=txt_texts, images=None, truncation=True, max_length=self.max_length, padding="longest", return_tensors=None)
+            for j, orig_i in enumerate(txt_map): per_sample[orig_i] = {k: enc_txt[k][j] for k in keep_keys if k in enc_txt}
+                
+        pixel_values = None
+        if img_map:
+            enc_img = self.processor(text=img_texts, images=img_nested, truncation=True, max_length=self.max_length, padding="longest", return_tensors=None)
+            for j, orig_i in enumerate(img_map): per_sample[orig_i] = {k: enc_img[k][j] for k in keep_keys if k in enc_img}
+            if (pv := enc_img.get("pixel_values", None)) is not None:
+                pixel_values = pv if torch.is_tensor(pv) else torch.stack([torch.as_tensor(x) for x in pv], dim=0)
+
+        for i in range(B):
+            if per_sample[i] is None: per_sample[i] = tok(self.fallback_empty_text, add_special_tokens=True)
+
+        batch = tok.pad(per_sample, padding=True, max_length=self.max_length, pad_to_multiple_of=self.pad_to_multiple_of, return_tensors="pt")
+        batch["labels"] = torch.stack(labels_list, dim=0)
+        if pixel_values is not None: batch["pixel_values"] = pixel_values.to(dtype=torch.bfloat16)
+
+        return dict(batch)

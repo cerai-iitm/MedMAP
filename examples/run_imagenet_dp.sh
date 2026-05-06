@@ -31,4 +31,4 @@ export BATCH=16
 export GRAD_ACCUM=64
 export LR=5e-4
 
-python -m scripts.train
+python -m scripts.train_imagenet
