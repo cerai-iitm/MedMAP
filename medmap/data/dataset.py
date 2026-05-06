@@ -3,7 +3,7 @@ import zipfile
 import pandas as pd
 from typing import List, Tuple
 from datasets import Dataset, DatasetDict, Features, Value, Sequence, ClassLabel, Image as DatasetsImage
-from utils.core import _safe_read_text
+from ..utils.core import _safe_read_text
 import numpy as np
 
 IMAGE_TOKEN = "<image>"

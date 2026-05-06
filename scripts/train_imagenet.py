@@ -1,3 +1,6 @@
+from scripts._bootstrap import setup_project_paths
+REPO_ROOT = setup_project_paths()
+
 import os
 import gc
 import torch
@@ -7,9 +10,6 @@ from transformers import AutoProcessor, TrainingArguments
 from transformers.models.smolvlm import SmolVLMConfig
 
 from datasets import Dataset, Features, Value, ClassLabel, Image as DatasetsImage
-
-from scripts._bootstrap import setup_project_paths
-REPO_ROOT = setup_project_paths()
 
 from medmap.utils.core import env_str, env_int, env_float, env_bool, seed_everything, get_formatted_datetime_string
 from medmap.data.dataset import build_imagenet_dataset

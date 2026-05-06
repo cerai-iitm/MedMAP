@@ -2,9 +2,11 @@ import os
 import random
 import numpy as np
 import torch
-from transformers import set_seed
+from transformers import set_seed, Trainer
 from datetime import datetime
 import gc
+import shutil
+from typing import Any, Dict, List, Optional, Tuple
 
 def env_str(name: str, default: str) -> str:
     return os.environ.get(name, default)
@@ -76,6 +78,15 @@ def _is_main_process() -> bool:
 
 def _safe_makedirs(path: str):
     os.makedirs(path, exist_ok=True)
+
+def _remove_if_exists(path: str):
+    try:
+        if os.path.islink(path) or os.path.isfile(path):
+            os.remove(path)
+        elif os.path.isdir(path):
+            shutil.rmtree(path)
+    except Exception:
+        pass
 
 def _symlink_dir(src_dir: str, dst_link: str):
     """
@@ -249,3 +260,4 @@ def export_predictions_csv(
     df = pd.DataFrame(rows)
     df.to_csv(out_path, index=False)
     print(f"[pred_dump] wrote: {out_path} (N={len(df)})")
+    

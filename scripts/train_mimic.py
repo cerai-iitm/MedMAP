@@ -1,7 +1,11 @@
+from scripts._bootstrap import setup_project_paths
+REPO_ROOT = setup_project_paths()
+
 import os
 import argparse
 import torch
 import json
+
 from transformers import AutoProcessor, TrainingArguments
 from transformers.utils import logging as hf_logging
 from dp_transformers.arguments import PrivacyArguments
@@ -41,10 +45,6 @@ def main():
     ap.add_argument("--weight_decay", type=float, default=0.01)
     ap.add_argument("--warmup_ratio", type=float, default=0.03)
     ap.add_argument("--max_length", type=int, default=426) 
-
-    ap.add_argument("--target_epsilon", type=float, default=4)
-    ap.add_argument("--clip_norm", type=float, default=1)
-    ap.add_argument("--public_clip_norm", type=float, default=50)
     
     # Execution Args
     ap.add_argument("--include_img", action=argparse.BooleanOptionalAction, default=False)
@@ -77,7 +77,7 @@ def main():
     ap.add_argument("--lora_dropout", type=float, default=0.00)
 
     ap.add_argument("--resume_from_checkpoint", type=str, default=None)
-    ap.add_argument("--itr", type=int, required=True)
+    ap.add_argument("--attempt", type=int, required=True)
 
     # Best checkpoint loading
     ap.add_argument("--load_best_model_at_end", action=argparse.BooleanOptionalAction, default=True)
@@ -100,22 +100,22 @@ def main():
         args.include_img, args.include_txt = True, True  # Force both modalities for DP training
         args.per_device_train_batch_size = args.per_device_train_batch_size * args.gradient_accumulation_steps
         if not args.selective_dp:
-            output_dir = f"outputs_mimic_cxr_medgemma_fulldp_eps_{args.target_epsilon}"
+            output_dir = f"outputs_mimic_cxr_medgemma_fulldp_eps_{args.target_epsilon}_{args.attempt}"
             wandb_run_name = f"MIMIC-CXR-Medgemma-FullDP-eps-{args.target_epsilon}-clip-{args.clip_norm}-lr-{args.learning_rate}-seed-{args.seed}-{get_formatted_datetime_string()}"
         else:
-            output_dir = f"outputs_mimic_cxr_medgemma_featdp_eps_{args.target_epsilon}"
+            output_dir = f"outputs_mimic_cxr_medgemma_featdp_eps_{args.target_epsilon}_{args.attempt}"
             wandb_run_name = f"MIMIC-CXR-Medgemma-FeatureDP-eps-{args.target_epsilon}-clip-{args.clip_norm}-public-clip-{args.public_clip_norm}-lr-{args.learning_rate}-seed-{args.seed}-{get_formatted_datetime_string()}"
     elif args.include_img and args.include_txt:
         print("Using both image and text inputs for Gemma.")
-        output_dir = f"outputs_mimic_cxr_medgemma_cls_both_{args.itr}"
+        output_dir = f"outputs_mimic_cxr_medgemma_cls_both_{args.attempt}"
         wandb_run_name = f"MIMIC-CXR-Medgemma-Both-ImgTxtClassification-{get_formatted_datetime_string()}"
     elif args.include_img:
         print("Using ONLY image inputs for Gemma.")
-        output_dir = f"outputs_mimic_cxr_medgemma_cls_img_only_{args.itr}"
+        output_dir = f"outputs_mimic_cxr_medgemma_cls_img_only_{args.attempt}"
         wandb_run_name = f"MIMIC-CXR-Medgemma-ImageOnly-{get_formatted_datetime_string()}"
     elif args.include_txt:
         print("Using ONLY text inputs for Gemma.")
-        output_dir = f"outputs_mimic_cxr_medgemma_cls_txt_only_{args.itr}"
+        output_dir = f"outputs_mimic_cxr_medgemma_cls_txt_only_{args.attempt}"
         wandb_run_name = f"MIMIC-CXR-Medgemma-TextOnly-{get_formatted_datetime_string()}"
     else:
         raise ValueError("At least one of --include_img or --include_txt must be set to True.")

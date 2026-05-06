@@ -12,18 +12,24 @@ REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." >/dev/null 2>&1 && pwd)"
 # Always run from the MedMAP repository root
 cd "${REPO_ROOT}"
 
+# Training entrypoint for this script
+TRAIN_FILE="scripts/train_mimic.py"
+TRAIN_MODULE="scripts.train_mimic"
+
 # Sanity check to make sure we are really in the MedMAP root
-if [[ ! -d "medmap" || ! -f "scripts/train.py" ]]; then
+if [[ ! -d "medmap" || ! -f "${TRAIN_FILE}" ]]; then
     echo "Error: Could not locate MedMAP repository root."
     echo "Current directory: $(pwd)"
-    echo "Expected to find: medmap/ and scripts/train.py"
+    echo "Expected to find: medmap/ and ${TRAIN_FILE}"
     exit 1
 fi
 
 echo "Running from repository root: $(pwd)"
+echo "Using training entrypoint: ${TRAIN_MODULE}"
+
 export CUDA_VISIBLE_DEVICES=2
 
-python -m scripts.train_mimic \
+python -m "${TRAIN_MODULE}" \
   --model_name google/medgemma-4b-pt \
   --output_root /storage/kaushik/ \
   --top_level_buckets p10 p11 p12 \
@@ -37,4 +43,5 @@ python -m scripts.train_mimic \
   --per_device_train_batch_size 4 \
   --gradient_accumulation_steps 8 \
   --learning_rate 5e-5 \
-  --num_train_epochs 3.0
+  --num_train_epochs 3.0 \
+  --attempt 1

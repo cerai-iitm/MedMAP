@@ -6,8 +6,8 @@ import subprocess
 import torch
 import wandb
 import csv
-from typing import Optional, List
-from transformers import TrainerCallback
+from typing import Optional, List, Dict, Any
+from transformers import TrainerCallback, Trainer
 from transformers.integrations import WandbCallback
 from ..utils.core import _safe_makedirs, _symlink_dir, export_predictions_csv
 
