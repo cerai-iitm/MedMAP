@@ -102,4 +102,4 @@ def setup_medgemma_model(model_name: str, num_labels: int, use_lora: bool, lora_
         )
         model = get_peft_model(model, lora_cfg)
         model.print_trainable_parameters()
-    return model, backbone
+    return model

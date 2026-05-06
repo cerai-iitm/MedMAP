@@ -41,6 +41,10 @@ def main():
     ap.add_argument("--weight_decay", type=float, default=0.01)
     ap.add_argument("--warmup_ratio", type=float, default=0.03)
     ap.add_argument("--max_length", type=int, default=426) 
+
+    ap.add_argument("--target_epsilon", type=float, default=4)
+    ap.add_argument("--clip_norm", type=float, default=1)
+    ap.add_argument("--public_clip_norm", type=float, default=50)
     
     # Execution Args
     ap.add_argument("--include_img", action=argparse.BooleanOptionalAction, default=False)
@@ -60,8 +64,8 @@ def main():
     ap.add_argument("--save_total_limit", type=int, default=None)
 
     # precision flags
-    ap.add_argument("--bf16", action=argparse.BooleanOptionalAction, default=True)
-    ap.add_argument("--tf32", action=argparse.BooleanOptionalAction, default=True)
+    ap.add_argument("--bf16", action=argparse.BooleanOptionalAction, default=False)
+    ap.add_argument("--tf32", action=argparse.BooleanOptionalAction, default=False)
 
     # gradient checkpointing flag
     ap.add_argument("--gradient_checkpointing", action=argparse.BooleanOptionalAction, default=False)
@@ -167,7 +171,7 @@ def main():
         want_text=args.include_txt,
     )
     
-    model, backbone = setup_medgemma_model(args.model_name, num_labels, use_lora=args.use_lora, lora_r=args.lora_r, lora_alpha=args.lora_alpha, lora_dropout=args.lora_dropout).to("cuda")
+    model = setup_medgemma_model(args.model_name, num_labels, use_lora=args.use_lora, lora_r=args.lora_r, lora_alpha=args.lora_alpha, lora_dropout=args.lora_dropout).to("cuda")
 
     # 8) Gradient checkpointing (user-controlled)
     if args.gradient_checkpointing:
@@ -181,9 +185,23 @@ def main():
             except Exception:
                 pass
 
-
-
     compute_metrics = build_compute_metrics(class_names)
+
+    if args.eval_strategy == "steps":
+        actual_save_strategy = "steps"
+        actual_save_steps = args.save_steps
+    else:
+        actual_save_strategy = "epoch"
+        actual_save_steps = None
+
+    greater_is_better = args.greater_is_better
+    if greater_is_better is None:
+        # heuristic: loss => False, otherwise True
+        mib = args.metric_for_best_model
+        if mib.endswith("loss") or mib == "loss" or mib == "eval_loss":
+            greater_is_better = False
+        else:
+            greater_is_better = True
 
     # 5. Training Args
     training_args = TrainingArguments(
@@ -205,7 +223,7 @@ def main():
         logging_strategy="steps",
         logging_steps=args.logging_steps,
 
-        seed=args.seed
+        seed=args.seed,
         data_seed=args.seed,
 
         eval_strategy=args.eval_strategy if val_ds is not None else "no",
@@ -228,7 +246,8 @@ def main():
         report_to="wandb", # Python callbacks handle W&B
         logging_dir=os.path.join(output_dir, "logs"),
         remove_unused_columns=False,
-        dataloader_pin_memory=False
+        dataloader_pin_memory=False,
+        dataloader_num_workers=4, 
     )
 
     tags = [t.strip() for t in args.wandb_tags.split(",") if t.strip()]
@@ -356,7 +375,7 @@ def main():
                 pass
 
     # 15) Final cleanup
-    _final_cleanup(trainer=trainer, model=model, backbone=backbone)
+    _final_cleanup(trainer=trainer, model=model, backbone=model.backbone)
 
 if __name__ == "__main__":
     main()
