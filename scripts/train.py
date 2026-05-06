@@ -2,6 +2,7 @@ import os
 import gc
 import torch
 import wandb
+import numpy as np
 from transformers import AutoProcessor, TrainingArguments
 from transformers.models.smolvlm import SmolVLMConfig
 
@@ -32,8 +33,8 @@ def main():
     TRAIN_TXT = env_str("TRAIN_TXT", "ILSVRC/ImageSets/CLS-LOC/train_cls.txt")
     
     EPOCHS = env_int("EPOCHS", 10) 
-    PER_DEVICE_BATCH = env_int("BATCH", 32)
-    GRAD_ACCUM = env_int("GRAD_ACCUM", 1)
+    PER_DEVICE_BATCH = env_int("BATCH", 16)
+    GRAD_ACCUM = env_int("GRAD_ACCUM", 64)
     LR = env_float("LR", 5e-5) 
     WEIGHT_DECAY = env_float("WEIGHT_DECAY", 0.01)
     WARMUP_RATIO = env_float("WARMUP_RATIO", 0.03)
@@ -52,6 +53,7 @@ def main():
     CLIP_NORM = env_float("CLIP_NORM", 1.0)
 
     GRAD_CHECKPOINT = env_bool("GRAD_CHECKPOINT", False)
+    USE_SPLIT_IDX = env_bool("USE_SPLIT_IDX", True) 
     USE_LORA = env_bool("USE_LORA", True)
     LORA_R = env_int("LORA_R", 16)
     LORA_ALPHA = env_int("LORA_ALPHA", 32)
@@ -60,14 +62,23 @@ def main():
     INCLUDE_IMG = env_bool("INCLUDE_IMG", True)
     INCLUDE_TEXT = env_bool("INCLUDE_TEXT", True)
     
-    if INCLUDE_IMG and INCLUDE_TEXT:
-        OUT_DIR = env_str("OUT_DIR", f"outputs_smolvlm_cls_img_txt_{get_formatted_datetime_string()}")
+    if USE_DP:
+        INCLUDE_IMG, INCLUDE_TEXT = True, True  # force both modalities for DP training
+        PER_DEVICE_BATCH = PER_DEVICE_BATCH * GRAD_ACCUM  # for DP training, we want to specify the effective batch size via PER_DEVICE_BATCH
+        if not SELECTIVE_DP:
+            OUT_DIR = env_str("OUT_DIR", f"/storage/kaushik/outputs_smolvlm_fulldp_eps_{TARGET_EPS}_clip_{CLIP_NORM}_lr_{LR}_seed_{SEED}_{get_formatted_datetime_string()}")
+            RUN_NAME = env_str("RUN_NAME", f"SmolVLM-FullDP-eps-{TARGET_EPS}-clip-{CLIP_NORM}-lr-{LR}-seed-{SEED}-{get_formatted_datetime_string()}")
+        else:
+            OUT_DIR = env_str("OUT_DIR", f"/storage/kaushik/outputs_smolvlm_featdp_eps_{TARGET_EPS}_clip_{CLIP_NORM}_lr_{LR}_seed_{SEED}_{get_formatted_datetime_string()}")
+            RUN_NAME = env_str("RUN_NAME", f"SmolVLM-FeatDP-eps-{TARGET_EPS}-clip-{CLIP_NORM}-lr-{LR}-seed-{SEED}-{get_formatted_datetime_string()}")
+    elif INCLUDE_IMG and INCLUDE_TEXT:
+        OUT_DIR = env_str("OUT_DIR", f"/storage/kaushik/outputs_smolvlm_cls_img_txt_{get_formatted_datetime_string()}")
         RUN_NAME = env_str("RUN_NAME", f"SmolVLM-Both-ImageTextClassification-{get_formatted_datetime_string()}")
     elif INCLUDE_IMG:
-        OUT_DIR = env_str("OUT_DIR", f"outputs_smolvlm_cls_img_only_{get_formatted_datetime_string()}")
+        OUT_DIR = env_str("OUT_DIR", f"/storage/kaushik/outputs_smolvlm_cls_img_only_{get_formatted_datetime_string()}")
         RUN_NAME = env_str("RUN_NAME", f"SmolVLM-ImageOnly-{get_formatted_datetime_string()}")
     elif INCLUDE_TEXT:
-        OUT_DIR = env_str("OUT_DIR", f"outputs_smolvlm_cls_txt_only_{get_formatted_datetime_string()}")
+        OUT_DIR = env_str("OUT_DIR", f"/storage/kaushik/outputs_smolvlm_cls_txt_only_{get_formatted_datetime_string()}")
         RUN_NAME = env_str("RUN_NAME", f"SmolVLM-TextOnly-{get_formatted_datetime_string()}")
 
     seed_everything(SEED)
@@ -86,19 +97,32 @@ def main():
     config = SmolVLMConfig.from_pretrained(MODEL_NAME, attn_implementation="eager")
     config.image_token_id = processor.tokenizer.convert_tokens_to_ids("<image>")
 
-    # Dataset
     full_ds, num_classes, class_names = build_dataset(CAPTIONS_JSON, ROOT_ZIP_PATH, TRAIN_TXT, use_tiny=True)
     full_ds = full_ds.cast_column("image_path", DatasetsImage(decode=True))
-    split_1 = full_ds.train_test_split(test_size=0.40, seed=SEED, stratify_by_column="class_idx")
-    train_ds = split_1["train"]
-    split_2 = split_1["test"].train_test_split(test_size=0.50, seed=SEED, stratify_by_column="class_idx")
-    val_ds, test_ds = split_2["train"], split_2["test"]
+    
+    # Dataset
+    if USE_SPLIT_IDX:
+        full_ds = full_ds.add_column("orig_idx", list(range(len(full_ds))))
+        train_idx = np.load("../data/split/imagenet/train_idx.npy")
+        val_idx   = np.load("../data/split/imagenet/val_idx.npy")
+        test_idx  = np.load("../data/split/imagenet/test_idx.npy")
+
+        train_ds = full_ds.select(train_idx)
+        val_ds   = full_ds.select(val_idx)
+        test_ds  = full_ds.select(test_idx)
+    else:
+        split_1 = full_ds.train_test_split(test_size=0.40, seed=SEED, stratify_by_column="class_idx")
+        train_ds = split_1["train"]
+        split_2 = split_1["test"].train_test_split(test_size=0.50, seed=SEED, stratify_by_column="class_idx")
+        val_ds, test_ds = split_2["train"], split_2["test"]
 
     if GRAD_CHECKPOINT:
         model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
 
     # Model
-    model = setup_model(MODEL_NAME, config, num_classes, USE_LORA, LORA_R, LORA_ALPHA, LORA_DROPOUT).to(device)
+    model = setup_model(MODEL_NAME, config, num_classes, USE_LORA, LORA_R, LORA_ALPHA, LORA_DROPOUT)
+    model = model.to(device)
+
     if hasattr(processor, "tokenizer"):
         model.resize_token_embeddings(len(processor.tokenizer))
 
@@ -163,8 +187,9 @@ def main():
 
     if USE_DP:
         trainer_kwargs["privacy_args"] = PrivacyArguments(
-            target_epsilon=TARGET_EPS, 
             per_sample_max_grad_norm=CLIP_NORM/PER_DEVICE_BATCH,
+            public_clip = 50/(PER_DEVICE_BATCH),
+            target_epsilon=TARGET_EPS, 
             selective_dp=SELECTIVE_DP
         )
 
