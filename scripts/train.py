@@ -5,8 +5,10 @@ import wandb
 from transformers import AutoProcessor, TrainingArguments
 from transformers.models.smolvlm import SmolVLMConfig
 
-from dp_transformers.arguments import PrivacyArguments
 from datasets import Dataset, Features, Value, ClassLabel, Image as DatasetsImage
+
+from scripts._bootstrap import setup_project_paths
+REPO_ROOT = setup_project_paths()
 
 from medmap.utils.core import env_str, env_int, env_float, env_bool, seed_everything, get_formatted_datetime_string
 from medmap.data.dataset import build_dataset
@@ -15,6 +17,8 @@ from medmap.data.metrics import compute_metrics_fn
 from medmap.models.smolvlm import setup_model
 from medmap.training.trainers import get_trainer
 from medmap.training.callbacks import WandbGpuCpuMemoryCallback, SaveManagerCallback, MemoryCleanupCallback, SplitEvalCallback
+
+from dp_transformers.arguments import PrivacyArguments
 
 
 def main():
@@ -58,10 +62,13 @@ def main():
     
     if INCLUDE_IMG and INCLUDE_TEXT:
         OUT_DIR = env_str("OUT_DIR", f"outputs_smolvlm_cls_img_txt_{get_formatted_datetime_string()}")
+        RUN_NAME = env_str("RUN_NAME", f"SmolVLM-Both-ImageTextClassification-{get_formatted_datetime_string()}")
     elif INCLUDE_IMG:
         OUT_DIR = env_str("OUT_DIR", f"outputs_smolvlm_cls_img_only_{get_formatted_datetime_string()}")
+        RUN_NAME = env_str("RUN_NAME", f"SmolVLM-ImageOnly-{get_formatted_datetime_string()}")
     elif INCLUDE_TEXT:
         OUT_DIR = env_str("OUT_DIR", f"outputs_smolvlm_cls_txt_only_{get_formatted_datetime_string()}")
+        RUN_NAME = env_str("RUN_NAME", f"SmolVLM-TextOnly-{get_formatted_datetime_string()}")
 
     seed_everything(SEED)
     device = "cuda" if torch.cuda.is_available() else "cpu"

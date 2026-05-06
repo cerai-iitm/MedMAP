@@ -1,5 +1,5 @@
 #!/bin/bash
-export CUDA_VISIBLE_DEVICES=0,1,2,3
+export CUDA_VISIBLE_DEVICES=2
 export USE_DP=0
 export INCLUDE_IMG=1
 export INCLUDE_TEXT=1
