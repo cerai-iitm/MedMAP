@@ -6,10 +6,13 @@ import subprocess
 import torch
 import wandb
 import csv
+import math
+import numpy as np
 from typing import Optional, List, Dict, Any
+from sklearn.metrics import roc_curve
 from transformers import TrainerCallback, Trainer
 from transformers.integrations import WandbCallback
-from ..utils.core import _safe_makedirs, _symlink_dir, export_predictions_csv
+from ..utils.core import _safe_makedirs, _symlink_dir, export_predictions_csv, _strategy_to_str
 
 class WandbGpuCpuMemoryCallback(TrainerCallback):
     def __init__(self, log_every_step=True, reset_peak_on_log=True, only_main_process=True, throttle_seconds=0.0):

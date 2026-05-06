@@ -139,7 +139,7 @@ def split_mimic_dataset_official_by_ids(
 
 def build_mimic_chexpert_dataset(
     top_level_buckets: List[str],
-    xrv_root: str,
+    mimic_best_img_dump: str,
     chexpert_csv: str,
     report_root: str,
     drop_all_nan_rows: bool = True,
@@ -155,7 +155,7 @@ def build_mimic_chexpert_dataset(
     """
     best_df_concat = None
     for top_level_bucket in top_level_buckets:
-        best_csv_path = os.path.join(xrv_root, top_level_bucket, "best_img", f"{top_level_bucket}_best_image_per_study_all_heuristic.csv")
+        best_csv_path = os.path.join(f"medmap/mimic_best_img_dump/{top_level_bucket}_best_image_per_study_all_heuristic.csv")
         # 1) Base CSV with best image per study
         best_df = pd.read_csv(best_csv_path, usecols=['image_path', 'subject_id', 'study_id', 'dicom_id'])
 
@@ -217,7 +217,7 @@ def build_mimic_chexpert_dataset(
     # Random sampling can produce empty val/test splits; Fix: sample after splitting (or sample per split).
     # Many metrics become NaN-only on a 100-sample subset, and W&B won’t plot them
     # Fix: if you want those plots during tiny tests, you need stratified sampling (or accept that AUC/AUPRC won’t be meaningful on 100 rows).
-    # df_for_hf = df_for_hf.sample(n=1000, random_state=42).reset_index(drop=True)
+    df_for_hf = df_for_hf.sample(n=1000, random_state=42).reset_index(drop=True)
 
     features = Features(
         {

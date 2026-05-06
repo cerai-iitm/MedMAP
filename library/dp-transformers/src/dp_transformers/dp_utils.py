@@ -276,7 +276,7 @@ class OpacusDPTrainer(Trainer):
         if num_microbatches == 1:
             return [inputs]
 
-        print(type(inputs))
+        # print(type(inputs))
         
         # get batch size
         if isinstance(inputs, dict):
@@ -377,8 +377,8 @@ class OpacusDPTrainer(Trainer):
 
             with self.compute_loss_context_manager():
                 loss = self.compute_loss(model, inputs, public=False, selective_dp=self.privacy_args.selective_dp)
-                print("Computed Net Loss")
-                print_gpu_memory()
+                # print("Computed Net Loss")
+                # print_gpu_memory()
 
             if self.args.n_gpu > 1:
                 loss = loss.mean()  # mean() to average as reduction is none
@@ -389,7 +389,7 @@ class OpacusDPTrainer(Trainer):
             else:
                 # print("Calculating Net Gradients...")
                 loss.backward()
-                print_gpu_memory()
+                # print_gpu_memory()
             #-------------------------------------------------------------------------
 
             if self.privacy_args.selective_dp:  
@@ -397,15 +397,15 @@ class OpacusDPTrainer(Trainer):
                     p.grad_sample.clone() / (self.user_grad_acc) if hasattr(p, "grad_sample") and p.grad_sample is not None else None
                     for p in model.parameters()
                 ]
-                print("Stored Priv Grads")
+                # print("Stored Priv Grads")
 
                 self.optimizer.zero_grad(set_to_none=True)
 
                 ## PUBLIC GRADIENT CALCULATION:
                 with self.compute_loss_context_manager():
                     pub_loss = self.compute_loss(model, public_inputs, public=True, selective_dp=True)
-                    print("Computed Public Loss")
-                    print_gpu_memory()
+                    # print("Computed Public Loss")
+                    # print_gpu_memory()
 
 
                 if self.args.n_gpu > 1:
@@ -428,7 +428,7 @@ class OpacusDPTrainer(Trainer):
                 priv_grads = self.clip(priv_grads, self.privacy_args.per_sample_max_grad_norm, microbatch_size)
                 
                 if isinstance(original_optimizer, custom_adam.CustomAdamW):
-                    print("Buffering Public Gradients separately")
+                    # print("Buffering Public Gradients separately")
                     assert len(pub_grads) == len(self.public_buffer), "length of private buffer and private grads unequal"
                     for i in range(len(self.public_buffer)):
                         if pub_grads[i] is None:

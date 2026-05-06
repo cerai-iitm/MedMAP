@@ -38,10 +38,10 @@ def main():
     
     # HP Args
     ap.add_argument("--num_train_epochs", type=float, default=3.0)
-    ap.add_argument("--per_device_train_batch_size", type=int, default=1024)
+    ap.add_argument("--per_device_train_batch_size", type=int, default=4)
     ap.add_argument("--per_device_eval_batch_size", type=int, default=4)
-    ap.add_argument("--gradient_accumulation_steps", type=int, default=512)
-    ap.add_argument("--learning_rate", type=float, default=2e-3)
+    ap.add_argument("--gradient_accumulation_steps", type=int, default=8)
+    ap.add_argument("--learning_rate", type=float, default=5e-5)
     ap.add_argument("--weight_decay", type=float, default=0.01)
     ap.add_argument("--warmup_ratio", type=float, default=0.03)
     ap.add_argument("--max_length", type=int, default=426) 
@@ -64,8 +64,8 @@ def main():
     ap.add_argument("--save_total_limit", type=int, default=None)
 
     # precision flags
-    ap.add_argument("--bf16", action=argparse.BooleanOptionalAction, default=False)
-    ap.add_argument("--tf32", action=argparse.BooleanOptionalAction, default=False)
+    ap.add_argument("--bf16", action=argparse.BooleanOptionalAction, default=True)
+    ap.add_argument("--tf32", action=argparse.BooleanOptionalAction, default=True)
 
     # gradient checkpointing flag
     ap.add_argument("--gradient_checkpointing", action=argparse.BooleanOptionalAction, default=False)
@@ -100,21 +100,23 @@ def main():
         args.include_img, args.include_txt = True, True  # Force both modalities for DP training
         args.per_device_train_batch_size = args.per_device_train_batch_size * args.gradient_accumulation_steps
         if not args.selective_dp:
+            print("Using FULL DP")
             output_dir = f"outputs_mimic_cxr_medgemma_fulldp_eps_{args.target_epsilon}_{args.attempt}"
             wandb_run_name = f"MIMIC-CXR-Medgemma-FullDP-eps-{args.target_epsilon}-clip-{args.clip_norm}-lr-{args.learning_rate}-seed-{args.seed}-{get_formatted_datetime_string()}"
         else:
+            print("Using FEATURE DP")
             output_dir = f"outputs_mimic_cxr_medgemma_featdp_eps_{args.target_epsilon}_{args.attempt}"
             wandb_run_name = f"MIMIC-CXR-Medgemma-FeatureDP-eps-{args.target_epsilon}-clip-{args.clip_norm}-public-clip-{args.public_clip_norm}-lr-{args.learning_rate}-seed-{args.seed}-{get_formatted_datetime_string()}"
     elif args.include_img and args.include_txt:
-        print("Using both image and text inputs for Gemma.")
+        print("Using both image and text inputs for Non Private Gemma.")
         output_dir = f"outputs_mimic_cxr_medgemma_cls_both_{args.attempt}"
         wandb_run_name = f"MIMIC-CXR-Medgemma-Both-ImgTxtClassification-{get_formatted_datetime_string()}"
     elif args.include_img:
-        print("Using ONLY image inputs for Gemma.")
+        print("Using ONLY image inputs for Non Private Gemma.")
         output_dir = f"outputs_mimic_cxr_medgemma_cls_img_only_{args.attempt}"
         wandb_run_name = f"MIMIC-CXR-Medgemma-ImageOnly-{get_formatted_datetime_string()}"
     elif args.include_txt:
-        print("Using ONLY text inputs for Gemma.")
+        print("Using ONLY text inputs for Non Private Gemma.")
         output_dir = f"outputs_mimic_cxr_medgemma_cls_txt_only_{args.attempt}"
         wandb_run_name = f"MIMIC-CXR-Medgemma-TextOnly-{get_formatted_datetime_string()}"
     else:
@@ -317,20 +319,27 @@ def main():
         ]
     }
 
+    if args.use_dp:
+        trainer_kwargs["privacy_args"] = PrivacyArguments(
+            per_sample_max_grad_norm=args.clip_norm/args.per_device_train_batch_size,
+            public_clip=args.public_clip_norm/args.per_device_train_batch_size,
+            target_epsilon=args.target_epsilon, 
+            selective_dp=args.selective_dp
+        )
+    
+    trainer = get_trainer(
+        use_dp=args.use_dp,
+        loss_mode="decomposed" if args.use_dp else "standard",
+        **trainer_kwargs,
+    )
+    trainer.model_accepts_loss_kwargs = False
+    
     cb_roc_per_label.attach_trainer(trainer)
     cb_dump.attach_trainer(trainer)
     cb_force_epoch_eval.attach_trainer(trainer)
     cb_mirror_test.attach_trainer(trainer)
 
-    if args.use_dp:
-        trainer_kwargs["privacy_args"] = PrivacyArguments(
-            per_sample_max_grad_norm=args.clip_norm/args.per_device_train_batch_size,
-            public_clip=args.public_clip_norm/args.per_device_train_batch_size,
-            target_epsilon=args.target_epsilon, selective_dp=args.selective_dp
-        )
 
-    trainer = get_trainer(use_dp=args.use_dp, **trainer_kwargs)
-    trainer.model_accepts_loss_kwargs = False
     
     # Save label metadata at root as well
     with open(os.path.join(output_dir, "labels_metadata.json"), "w") as f:

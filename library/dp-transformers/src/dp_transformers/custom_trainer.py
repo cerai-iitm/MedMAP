@@ -2575,7 +2575,7 @@ class Trainer:
                 update_step += 1
                 num_batches = args.gradient_accumulation_steps if update_step != (total_updates - 1) else remainder
                 batch_samples, num_items_in_batch = self.get_batch_samples(epoch_iterator, num_batches, args.device)
-                print("Num_items: ", num_items_in_batch)
+                # print("Num_items: ", num_items_in_batch)
                 if self.public_batch:
                     pub_batch_samples, _ = self.get_batch_samples(public_epoch_iterator, num_batches, args.device)
                 else:
@@ -2693,20 +2693,20 @@ class Trainer:
 
                             context = implicit_replication
                         ## CHECK
-                        for p in model.parameters():
-                            if hasattr(p, "summed_grad") and p.summed_grad is not None:
-                                print("Before step: summed_grad found for", p.shape)
+                        # for p in model.parameters():
+                        #     if hasattr(p, "summed_grad") and p.summed_grad is not None:
+                        #         print("Before step: summed_grad found for", p.shape)
                         with context():
-                            for name, param in model.named_parameters():
-                                if torch.isnan(param.data).any() or torch.isinf(param.data).any():
-                                    print(f"nan param {name}")
+                            # for name, param in model.named_parameters():
+                            #     if torch.isnan(param.data).any() or torch.isinf(param.data).any():
+                            #         print(f"nan param {name}")
                             for name, p in model.named_parameters():
                                 if p.requires_grad and p.grad_sample is None:
                                     raise RuntimeError(f"Missing grad_sample for {name}")
                             self.optimizer.step()
-                            for name, param in model.named_parameters():
-                                if torch.isnan(param.data).any() or torch.isinf(param.data).any():
-                                    print(f"nan param {name}")
+                            # for name, param in model.named_parameters():
+                            #     if torch.isnan(param.data).any() or torch.isinf(param.data).any():
+                            #         print(f"nan param {name}")
 
                         self.control = self.callback_handler.on_optimizer_step(args, self.state, self.control)
 

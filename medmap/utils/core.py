@@ -2,7 +2,9 @@ import os
 import random
 import numpy as np
 import torch
+import pandas as pd
 from transformers import set_seed, Trainer
+from transformers.trainer_utils import IntervalStrategy
 from datetime import datetime
 import gc
 import shutil
@@ -261,3 +263,11 @@ def export_predictions_csv(
     df.to_csv(out_path, index=False)
     print(f"[pred_dump] wrote: {out_path} (N={len(df)})")
     
+def _strategy_to_str(x):
+    if x is None:
+        return None
+    if isinstance(x, IntervalStrategy):
+        return x.value
+    if hasattr(x, "value"):  # safety for other enums
+        return x.value
+    return str(x)

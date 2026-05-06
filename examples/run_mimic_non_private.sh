@@ -27,7 +27,7 @@ fi
 echo "Running from repository root: $(pwd)"
 echo "Using training entrypoint: ${TRAIN_MODULE}"
 
-export CUDA_VISIBLE_DEVICES=2
+export CUDA_VISIBLE_DEVICES=1
 
 python -m "${TRAIN_MODULE}" \
   --model_name google/medgemma-4b-pt \
