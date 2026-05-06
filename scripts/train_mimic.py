@@ -64,8 +64,8 @@ def main():
     ap.add_argument("--save_total_limit", type=int, default=None)
 
     # precision flags
-    ap.add_argument("--bf16", action=argparse.BooleanOptionalAction, default=True)
-    ap.add_argument("--tf32", action=argparse.BooleanOptionalAction, default=True)
+    ap.add_argument("--bf16", action=argparse.BooleanOptionalAction, default=False)
+    ap.add_argument("--tf32", action=argparse.BooleanOptionalAction, default=False)
 
     # gradient checkpointing flag
     ap.add_argument("--gradient_checkpointing", action=argparse.BooleanOptionalAction, default=False)
@@ -351,7 +351,7 @@ def main():
 
     # 6. Execution
     # 12) Train (resume supported)
-    train_result =trainer.train(resume_from_checkpoint=args.resume_from_checkpoint)
+    train_result =trainer.train()
 
     # 13) Save final model + processor
     trainer.save_model(output_dir)

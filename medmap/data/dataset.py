@@ -217,7 +217,7 @@ def build_mimic_chexpert_dataset(
     # Random sampling can produce empty val/test splits; Fix: sample after splitting (or sample per split).
     # Many metrics become NaN-only on a 100-sample subset, and W&B won’t plot them
     # Fix: if you want those plots during tiny tests, you need stratified sampling (or accept that AUC/AUPRC won’t be meaningful on 100 rows).
-    df_for_hf = df_for_hf.sample(n=1000, random_state=42).reset_index(drop=True)
+    df_for_hf = df_for_hf.sample(n=200, random_state=42).reset_index(drop=True)
 
     features = Features(
         {

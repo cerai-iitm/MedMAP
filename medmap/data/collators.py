@@ -305,4 +305,4 @@ class Gemma3HeteroNoDummyCollator:
         if pixel_values is not None:
             batch["pixel_values"] = pixel_values
 
-        return batch
+        return dict(batch)
