@@ -161,62 +161,148 @@ class Gemma3HeteroNoDummyCollator:
     text_key: str = "text"
     image_key: str = "image"
     labels_key: str = "labels"
+
     max_length: int = 512
     num_labels: int = 12
     pad_to_multiple_of: Optional[int] = 8
+
     want_image: bool = True
     want_text: bool = True
+
+    # If a sample ends up with neither image nor text (e.g. want_image=True but image missing AND want_text=False),
+    # we fallback to empty text to keep batch size stable.
     fallback_empty_text: str = ""
 
     def _as_image_list(self, img) -> List[Any]:
-        if img is None: return []
-        if isinstance(img, (list, tuple)): return [x for x in img if x is not None]
+        if img is None:
+            return []
+        if isinstance(img, (list, tuple)):
+            return [x for x in img if x is not None]
         return [img]
 
     def _prompt_with_boi(self, text: str, n_imgs: int, use_text: bool) -> str:
-        boi = getattr(self.processor, "boi_token", getattr(self.processor.tokenizer, "boi_token", None))
-        if n_imgs <= 0: return text if use_text else self.fallback_empty_text
+        boi = getattr(self.processor, "boi_token", None) or getattr(self.processor.tokenizer, "boi_token", None)
+        if boi is None:
+            raise RuntimeError("Processor/tokenizer has no boi_token; cannot build Gemma3 multimodal prompts.")
+
+        if n_imgs <= 0:
+            return text if use_text else self.fallback_empty_text
+
         boi_block = " ".join([boi] * n_imgs)
-        return f"{boi_block} {text.strip()}" if use_text and text.strip() else boi_block
+        if use_text and text.strip():
+            # Put image placeholders first (simple + robust). You can swap order if you prefer.
+            return f"{boi_block} {text.strip()}"
+        return boi_block
 
     def __call__(self, features: List[Dict[str, Any]]) -> Dict[str, torch.Tensor]:
         tok = self.processor.tokenizer
+        drop_keys = {"pixel_values", "num_crops"}  # do NOT feed these to tokenizer.pad
+        KEEP_KEYS = ("input_ids", "attention_mask", "token_type_ids")
+
         B = len(features)
-        
-        labels_list, img_map, img_texts, img_nested, txt_map, txt_texts = [], [], [], [], [], []
+
+        # --- collect labels (kept aligned with original batch order) ---
+        labels_list = []
         for i, f in enumerate(features):
             y = f.get(self.labels_key, None)
-            labels_list.append(torch.tensor([float("nan") if v is None else float(v) for v in y], dtype=torch.float32))
-            
-            raw_text, raw_img = f.get(self.text_key, ""), f.get(self.image_key, None)
-            imgs = self._as_image_list(raw_img)
-            
-            use_img, use_txt = self.want_image and len(imgs) > 0, self.want_text and bool(raw_text.strip())
-            
-            if use_img:
-                img_map.append(i); img_texts.append(self._prompt_with_boi(raw_text, len(imgs), use_txt)); img_nested.append(imgs)
-            else:
-                txt_map.append(i); txt_texts.append(raw_text.strip() if use_txt else self.fallback_empty_text)
+            if y is None:
+                raise ValueError(f"Missing '{self.labels_key}' in a sample.")
+            if len(y) != self.num_labels:
+                raise ValueError(f"Example {i} has {len(y)} labels, expected {self.num_labels}.")
+            # HF datasets may give None for missing floats inside sequences -> convert to NaN
+            y = [float("nan") if v is None else float(v) for v in y]
 
-        per_sample = [None] * B
-        keep_keys = ("input_ids", "attention_mask", "token_type_ids")
-        
+            if len(y) != self.num_labels:
+                raise ValueError(f"Example {i} has {len(y)} labels, expected {self.num_labels}.")
+
+            labels_list.append(torch.tensor(y, dtype=torch.float32))
+
+
+        # --- split into image-capable vs text-only samples (preserve original order) ---
+        img_map: List[int] = []
+        img_texts: List[str] = []
+        img_nested_images: List[List[Any]] = []  # nested list per sample
+
+        txt_map: List[int] = []
+        txt_texts: List[str] = []
+
+        for i, f in enumerate(features):
+            raw_text = (f.get(self.text_key, "") or "")
+            raw_img = f.get(self.image_key, None)
+
+            imgs = self._as_image_list(raw_img)
+            has_img = len(imgs) > 0
+            has_txt = bool(raw_text.strip())
+
+            use_img = self.want_image and has_img
+            use_txt = self.want_text and has_txt
+
+            if use_img:
+                prompt = self._prompt_with_boi(raw_text, n_imgs=len(imgs), use_text=use_txt)
+                img_map.append(i)
+                img_texts.append(prompt)
+                img_nested_images.append(imgs)
+            else:
+                # text-only path (even if want_text=False, we must keep batch stable)
+                prompt = raw_text.strip() if use_txt else self.fallback_empty_text
+                txt_map.append(i)
+                txt_texts.append(prompt)
+
+        per_sample: List[Optional[Dict[str, Any]]] = [None] * B
+
+        # --- encode text-only samples ---
         if txt_map:
-            enc_txt = self.processor(text=txt_texts, images=None, truncation=True, max_length=self.max_length, padding="longest", return_tensors=None)
-            for j, orig_i in enumerate(txt_map): per_sample[orig_i] = {k: enc_txt[k][j] for k in keep_keys if k in enc_txt}
-                
+            enc_txt = self.processor(
+                text=txt_texts,
+                images=None,
+                truncation=True,
+                max_length=self.max_length,
+                padding="longest",   # important for gemma3 processor
+                return_tensors=None,
+            )
+            for j, orig_i in enumerate(txt_map):
+                per_sample[orig_i] = {k: enc_txt[k][j] for k in KEEP_KEYS if k in enc_txt}
+
+        # --- encode image samples ---
         pixel_values = None
         if img_map:
-            enc_img = self.processor(text=img_texts, images=img_nested, truncation=True, max_length=self.max_length, padding="longest", return_tensors=None)
-            for j, orig_i in enumerate(img_map): per_sample[orig_i] = {k: enc_img[k][j] for k in keep_keys if k in enc_img}
-            if (pv := enc_img.get("pixel_values", None)) is not None:
-                pixel_values = pv if torch.is_tensor(pv) else torch.stack([torch.as_tensor(x) for x in pv], dim=0)
+            enc_img = self.processor(
+                text=img_texts,
+                images=img_nested_images,   # nested list per sample
+                truncation=True,
+                max_length=self.max_length,
+                padding="longest",   # important for gemma3 processor
+                return_tensors=None,
+            )
+            for j, orig_i in enumerate(img_map):
+                per_sample[orig_i] = {k: enc_img[k][j] for k in KEEP_KEYS if k in enc_img}
 
+            pv = enc_img.get("pixel_values", None)
+            if pv is not None:
+                if torch.is_tensor(pv):
+                    pixel_values = pv
+                else:
+                    pv_t = [torch.as_tensor(x) for x in pv]
+                    pixel_values = torch.stack(pv_t, dim=0)
+
+        # Safety: should never happen because every sample goes to img_map or txt_map
         for i in range(B):
-            if per_sample[i] is None: per_sample[i] = tok(self.fallback_empty_text, add_special_tokens=True)
+            if per_sample[i] is None:
+                per_sample[i] = tok(self.fallback_empty_text, add_special_tokens=True)
 
-        batch = tok.pad(per_sample, padding=True, max_length=self.max_length, pad_to_multiple_of=self.pad_to_multiple_of, return_tensors="pt")
+        # --- pad to batch tensors ---
+        batch = tok.pad(
+            per_sample,
+            padding=True,
+            max_length=self.max_length,
+            pad_to_multiple_of=self.pad_to_multiple_of,
+            return_tensors="pt",
+        )
+
         batch["labels"] = torch.stack(labels_list, dim=0)
-        if pixel_values is not None: batch["pixel_values"] = pixel_values.to(dtype=torch.bfloat16)
 
-        return dict(batch)
+        # IMPORTANT: pixel_values is FLATTENED images (N_images, C, H, W), not (B, ...)
+        if pixel_values is not None:
+            batch["pixel_values"] = pixel_values
+
+        return batch

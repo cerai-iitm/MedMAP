@@ -80,15 +80,26 @@ class MedGemmaForMultiLabelClassification(nn.Module):
 
         return out
 
-def setup_medgemma_model(model_name: str, num_labels: int, use_lora: bool, r: int, alpha: int, dropout: float):
+def setup_medgemma_model(model_name: str, num_labels: int, use_lora: bool, lora_r: int, lora_alpha: int, lora_dropout: float):
     backbone = AutoModelForImageTextToText.from_pretrained(model_name, torch_dtype=torch.bfloat16)
     backbone.config.use_cache = False
     model = MedGemmaForMultiLabelClassification(backbone, num_labels=num_labels)
     
     if use_lora and PEFT_AVAILABLE:
-        lora_cfg = LoraConfig(r=r, lora_alpha=alpha, lora_dropout=dropout, bias="none", 
-                              target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "out_proj", "gate_proj", "up_proj", "down_proj", "fc1", "fc2"],
-                              modules_to_save=["classifier"])
+        target_modules = [
+            "q_proj", "k_proj", "v_proj", "o_proj", "out_proj",
+            "gate_proj", "up_proj", "down_proj",
+            "fc1", "fc2",
+        ]
+
+        lora_cfg = LoraConfig(
+            r=lora_r,
+            lora_alpha=lora_alpha,
+            lora_dropout=lora_dropout,
+            bias="none",
+            target_modules=target_modules,
+            modules_to_save=["classifier"],
+        )
         model = get_peft_model(model, lora_cfg)
         model.print_trainable_parameters()
-    return model
+    return model, backbone
