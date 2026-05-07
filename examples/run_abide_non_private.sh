@@ -35,7 +35,7 @@ export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-2}"
 
 export ABIDE_DATA_DIR="${ABIDE_DATA_DIR:-/storage/common/datasets/ABIDE_PCP_full}"
 export ABIDE_FC_DIR="${ABIDE_FC_DIR:-/storage/common/datasets/ABIDE_PCP_full/fc_features}"
-export FEATURE_JSON="${FEATURE_JSON:-/mnt/data/recommended_feature_lists.json}"
+export FEATURE_JSON="${FEATURE_JSON:-medmap/abide_dump/recommended_feature_lists.json}"
 
 export SEED="${SEED:-81}"
 export EPOCHS="${EPOCHS:-100}"
