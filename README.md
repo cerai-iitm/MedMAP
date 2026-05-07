@@ -1,27 +1,8 @@
 # MedMAP: A Clinically Grounded Multi-Modal Benchmark for Modality-Asymmetric Privacy
 
-Multi-modal data is increasingly used in high-stakes domains such as healthcare,1
-where different modalities often exhibit unequal privacy sensitivity. For example,2
-clinical text reports or patient attributes may be substantially more privacy-sensitive3
-than imaging data, while also containing highly informative signals for downstream4
-prediction tasks. We study this setting of modality-asymmetric privacy, where only5
-a subset of modalities requires strong differential privacy (DP) guarantees. We intro-6
-duce MedMAP, the first medically grounded benchmark for multi-modal learning7
-under asymmetric privacy constraints. MedMAP includes multi-modal healthcare8
-datasets (MIMIC-CXR and ABIDE) spanning diverse modalities, prediction tasks,9
-and distribution shifts, where the protected modalities correspond to clinically10
-sensitive information. The benchmark standardizes protected modalities, privacy11
-units, baselines, and evaluation protocols, enabling controlled and reproducible12
-evaluation of privacy-utility tradeoffs in multi-modal learning. Experiments using13
-MedMAP show that incorporating a protected modality with differential privacy14
-can outperform baselines that rely only on unprotected modalities across several op-15
-erating regimes. We further observe a privacy-budget-dependent tradeoff between16
-protecting the entire example (full DP) and selectively protecting only the sensitive17
-modality (feature DP): feature DP performs better under stricter privacy budgets,18
-while full DP becomes competitive at higher privacy budgets. These findings high-19
-light the importance of modality-aware privacy mechanisms for healthcare AI and20
-demonstrate the utility of MedMAP for studying privacy-preserving multi-modal21
-learning with sensitive medical information.
+<p align="justify">
+Multi-modal data is increasingly used in high-stakes domains such as healthcare, where different modalities often exhibit unequal privacy sensitivity. For example, clinical text reports or patient attributes may be substantially more privacy-sensitive than imaging data, while also containing highly informative signals for downstream prediction tasks. We study this setting of modality-asymmetric privacy, where only a subset of modalities requires strong differential privacy (DP) guarantees. We introduce MedMAP, the first medically grounded benchmark for multi-modal learning under asymmetric privacy constraints. MedMAP includes multi-modal healthcare datasets (MIMIC-CXR and ABIDE) spanning diverse modalities, prediction tasks, and distribution shifts, where the protected modalities correspond to clinically sensitive information. The benchmark standardizes protected modalities, privacy units, baselines, and evaluation protocols, enabling controlled and reproducible evaluation of privacy-utility tradeoffs in multi-modal learning. Experiments using MedMAP show that incorporating a protected modality with differential privacy can outperform baselines that rely only on unprotected modalities across several operating regimes. We further observe a privacy-budget-dependent tradeoff between protecting the entire example (full DP) and selectively protecting only the sensitive modality (feature DP): feature DP performs better under stricter privacy budgets, while full DP becomes competitive at higher privacy budgets. These findings highlight the importance of modality-aware privacy mechanisms for healthcare AI and demonstrate the utility of MedMAP for studying privacy-preserving multi-modal learning with sensitive medical information.
+</p>
 
 
 MedMAP is a software package for benchmarking differentially private multimodal learning across image, text, and tabular/phenotypic data.
@@ -95,6 +76,8 @@ Download the ImageNet Object Localization Challenge dataset from Kaggle:
 https://www.kaggle.com/competitions/imagenet-object-localization-challenge/data
 ```
 
+Approximate download size: **~155 GB**. Ensure that sufficient disk space is available before downloading and extracting the archive.
+
 First, install and configure the Kaggle CLI:
 
 ```bash
@@ -158,6 +141,8 @@ Download ImageNet-Captions from:
 ```bash
 https://github.com/mlfoundations/imagenet-captions
 ```
+
+Approximate download size: **~35 MB** for `imagenet_captions.zip`.
 
 Set the captions directory:
 
@@ -264,6 +249,8 @@ Download the reports archive:
 mimic-cxr-reports.zip
 ```
 
+Approximate download size: **~100 MB** compressed for the reports-only archive.
+
 Set the reports directory:
 
 ```bash
@@ -311,6 +298,8 @@ MIMIC-CXR-JPG is available from:
 ```bash
 https://physionet.org/content/mimic-cxr-jpg/2.1.0/
 ```
+
+Approximate download size: **~570 GB** for the full MIMIC-CXR-JPG dataset.
 
 Set the MIMIC-CXR-JPG root directory:
 
@@ -409,6 +398,8 @@ python scripts/train_mimic_medgemma.py \
 # 5. ABIDE Setup
 
 For ABIDE experiments, the code automatically downloads the dataset using `nilearn.datasets.fetch_abide_pcp`.
+
+Approximate download size depends on the selected derivative and number of subjects. For the `func_preproc` derivative, individual files are large, typically **~30 MB--200 MB per subject**.
 
 You may optionally specify a local cache directory:
 
@@ -509,7 +500,7 @@ If you use this software package, please cite the corresponding paper:
 @inproceedings{medmap2026,
   title     = {MedMAP: Benchmarking Differentially Private Multimodal Learning},
   author    = {Anonymous Authors},
-  booktitle = {NeurIPS Datasets and Benchmarks Track},
+  booktitle = {Preprint},
   year      = {2026}
 }
 ```
