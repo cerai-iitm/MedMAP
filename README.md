@@ -719,3 +719,37 @@ If you use this software package, please cite the corresponding paper:
 ```
 
 Please also cite the original datasets and model checkpoints used in each experiment.
+
+---
+
+## Acknowledgements
+
+This repository builds upon several excellent open-source datasets, models, and libraries.
+
+We would like to acknowledge:
+
+- The creators and maintainers of the ABIDE and MIMIC-CXR datasets.
+- The developers of SmolVLM, MedGemma, HuggingFace Transformers, PyTorch, scikit-learn, and Opacus.
+- Microsoft Research for the DP-Transformers project, which provided useful references and implementation insights for differentially private training with Transformer-based models.
+
+### DP-Transformers
+
+If you use or build upon this repository, please also consider citing and acknowledging DP-Transformers:
+
+- DP-Transformers Project Page:  
+  https://www.microsoft.com/en-us/research/project/dp-transformers
+
+- GitHub Repository:  
+  https://github.com/microsoft/dp-transformers
+
+### Licenses and Usage
+
+All datasets, pretrained models, and third-party libraries remain under their respective licenses and terms of use. Users are responsible for ensuring compliance with dataset access agreements and model licenses before usage.
+
+In particular:
+
+- MIMIC-CXR requires credentialed PhysioNet access and compliance with the associated Data Use Agreement (DUA).
+- ABIDE usage must follow the dataset’s official terms and conditions.
+- SmolVLM, MedGemma, and associated libraries must be used according to their respective model and software licenses.
+
+---
