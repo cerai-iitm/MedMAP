@@ -1,5 +1,28 @@
 # MedMAP: A Clinically Grounded Multi-Modal Benchmark for Modality-Asymmetric Privacy
 
+Multi-modal data is increasingly used in high-stakes domains such as healthcare,1
+where different modalities often exhibit unequal privacy sensitivity. For example,2
+clinical text reports or patient attributes may be substantially more privacy-sensitive3
+than imaging data, while also containing highly informative signals for downstream4
+prediction tasks. We study this setting of modality-asymmetric privacy, where only5
+a subset of modalities requires strong differential privacy (DP) guarantees. We intro-6
+duce MedMAP, the first medically grounded benchmark for multi-modal learning7
+under asymmetric privacy constraints. MedMAP includes multi-modal healthcare8
+datasets (MIMIC-CXR and ABIDE) spanning diverse modalities, prediction tasks,9
+and distribution shifts, where the protected modalities correspond to clinically10
+sensitive information. The benchmark standardizes protected modalities, privacy11
+units, baselines, and evaluation protocols, enabling controlled and reproducible12
+evaluation of privacy-utility tradeoffs in multi-modal learning. Experiments using13
+MedMAP show that incorporating a protected modality with differential privacy14
+can outperform baselines that rely only on unprotected modalities across several op-15
+erating regimes. We further observe a privacy-budget-dependent tradeoff between16
+protecting the entire example (full DP) and selectively protecting only the sensitive17
+modality (feature DP): feature DP performs better under stricter privacy budgets,18
+while full DP becomes competitive at higher privacy budgets. These findings high-19
+light the importance of modality-aware privacy mechanisms for healthcare AI and20
+demonstrate the utility of MedMAP for studying privacy-preserving multi-modal21
+learning with sensitive medical information.
+
 
 MedMAP is a software package for benchmarking differentially private multimodal learning across image, text, and tabular/phenotypic data.
 
