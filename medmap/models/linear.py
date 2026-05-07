@@ -146,7 +146,9 @@ class LinearABIDEForSequenceClassification(PreTrainedModel):
         elif labels is not None:
             batch_size = labels.shape[0]
         else:
-            raise ValueError("At least one of fmri_features, sensitive_features, or labels is required.")
+            raise ValueError(
+                "At least one of fmri_features, sensitive_features, or labels is required."
+            )
 
         fmri = self._ensure_tensor(
             fmri_features,
@@ -161,46 +163,91 @@ class LinearABIDEForSequenceClassification(PreTrainedModel):
             device=device,
         )
 
-        # Apply modality-selection flags.
-        # For example:
-        #   INCLUDE_FMRI=False      -> fMRI block is zeroed.
-        #   INCLUDE_SENSITIVE=False -> sensitive block is zeroed.
         fmri_active = self._apply_flag(fmri, has_fmri_flags)
         sensitive_active = self._apply_flag(sensitive, has_sensitive_flags)
 
         zeros_sensitive = torch.zeros_like(sensitive_active)
 
-        # Public-only view: x_pub = (fMRI, zero-sensitive).
         x_public = self._concat(fmri_active, zeros_sensitive)
-
-        # Full view: x = (fMRI, sensitive).
         x_full = self._concat(fmri_active, sensitive_active)
 
-        logits_public = self.classifier(x_public)
-        logits_full = self.classifier(x_full)
-
-        if loss_mode == "standard":
-            logits = logits_full
-        else:
-            logits = logits_public if public else logits_full
+        # IMPORTANT FOR OPACUS / dp-transformers:
+        # Since this linear classifier is the first trainable module, its input
+        # comes directly from the batch and normally does not require gradients.
+        # Some Opacus hook paths then fail to create grad_sample.
+        #
+        # Making the classifier input require grad fixes:
+        # RuntimeError: Missing grad_sample for _module.classifier.weight
+        if self.training and loss_mode == "decomposed":
+            x_public = x_public.detach().requires_grad_(True)
+            x_full = x_full.detach().requires_grad_(True)
 
         loss = None
+
+        # ------------------------------------------------------------
+        # Non-private / standard mode
+        # ------------------------------------------------------------
+        if loss_mode == "standard":
+            logits = self.classifier(x_full)
+
+            if labels is not None:
+                labels = labels.to(device=device).long().view(-1)
+                loss = F.cross_entropy(logits.float(), labels, reduction="mean")
+
+            return SequenceClassifierOutput(
+                loss=loss,
+                logits=logits,
+                hidden_states=None,
+                attentions=None,
+            )
+
+        # ------------------------------------------------------------
+        # DP / decomposed mode
+        # ------------------------------------------------------------
+        labels_for_loss = None
         if labels is not None:
-            labels = labels.to(device=device).long().view(-1)
+            labels_for_loss = labels.to(device=device).long().view(-1)
 
-            if loss_mode == "standard":
-                loss = F.cross_entropy(logits_full.float(), labels, reduction="mean")
-            else:
-                public_loss = F.cross_entropy(logits_public.float(), labels, reduction="mean")
-                full_loss = F.cross_entropy(logits_full.float(), labels, reduction="mean")
+        if public:
+            # Public gradient step:
+            # loss = CE(model(fMRI, zero-sensitive), y)
+            logits_public = self.classifier(x_public)
+            logits = logits_public
 
-                if public:
-                    loss = public_loss
-                else:
-                    if selective_dp:
-                        loss = full_loss - public_loss
-                    else:
-                        loss = full_loss
+            if labels_for_loss is not None:
+                loss = F.cross_entropy(logits_public.float(), labels_for_loss, reduction="mean")
+
+        elif selective_dp:
+            # Feature-DP private step:
+            # loss = CE(model(fMRI, sensitive), y)
+            #      - CE(model(fMRI, zero-sensitive), y)
+            #
+            # Both paths are intentionally part of the loss graph.
+            logits_full = self.classifier(x_full)
+            logits_public = self.classifier(x_public)
+
+            full_loss = None
+            public_loss = None
+
+            if labels_for_loss is not None:
+                full_loss = F.cross_entropy(logits_full.float(), labels_for_loss, reduction="mean")
+                public_loss = F.cross_entropy(logits_public.float(), labels_for_loss, reduction="mean")
+                loss = full_loss - public_loss
+
+            logits = logits_full
+
+        else:
+            # Full DP-SGD private step:
+            # loss = CE(model(fMRI, sensitive), y)
+            #
+            # Do NOT also compute public logits here, because that creates an
+            # unused second forward through the same Linear module and can break
+            # Opacus grad_sample bookkeeping.
+            logits_full = self.classifier(x_full)
+            logits = logits_full
+
+            if labels_for_loss is not None:
+                loss = F.cross_entropy(logits_full.float(), labels_for_loss, reduction="mean")
 
         return SequenceClassifierOutput(
             loss=loss,
