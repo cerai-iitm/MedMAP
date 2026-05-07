@@ -105,7 +105,7 @@ export EVAL_STEPS=700
 # ============================================================
 
 export USE_DP=1
-export SELECTIVE_DP=0
+export SELECTIVE_DP=1
 export TARGET_EPS=1.0
 export CLIP_NORM=1.0
 
@@ -136,10 +136,10 @@ export GRAD_CHECKPOINT=0
 STAMP="$(date +'%Y%m%d_%H%M%S')"
 
 if [[ "${SELECTIVE_DP}" == "1" ]]; then
-    export OUT_DIR="/storage/kaushik/outputs_smolvlm_featdp_eps_${TARGET_EPS}_clip_${CLIP_NORM}_lr_${LR}_seed_${SEED}_${STAMP}"
+    export OUT_DIR="outputs_smolvlm_featdp_eps_${TARGET_EPS}_clip_${CLIP_NORM}_lr_${LR}_seed_${SEED}_${STAMP}"
     export RUN_NAME="SmolVLM-FeatDP-eps-${TARGET_EPS}-clip-${CLIP_NORM}-lr-${LR}-seed-${SEED}-${STAMP}"
 else
-    export OUT_DIR="/storage/kaushik/outputs_smolvlm_fulldp_eps_${TARGET_EPS}_clip_${CLIP_NORM}_lr_${LR}_seed_${SEED}_${STAMP}"
+    export OUT_DIR="outputs_smolvlm_fulldp_eps_${TARGET_EPS}_clip_${CLIP_NORM}_lr_${LR}_seed_${SEED}_${STAMP}"
     export RUN_NAME="SmolVLM-FullDP-eps-${TARGET_EPS}-clip-${CLIP_NORM}-lr-${LR}-seed-${SEED}-${STAMP}"
 fi
 

@@ -133,7 +133,7 @@ export GRAD_CHECKPOINT=0
 # ============================================================
 
 STAMP="$(date +'%Y%m%d_%H%M%S')"
-export OUT_DIR="/storage/kaushik/outputs_smolvlm_cls_img_txt_${STAMP}"
+export OUT_DIR="outputs_smolvlm_cls_img_txt_${STAMP}"
 export RUN_NAME="SmolVLM-Both-ImageTextClassification-${STAMP}"
 
 # ============================================================

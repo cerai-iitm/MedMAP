@@ -66,19 +66,19 @@ def main():
         INCLUDE_IMG, INCLUDE_TEXT = True, True  # force both modalities for DP training
         PER_DEVICE_BATCH = PER_DEVICE_BATCH * GRAD_ACCUM  # for DP training, we want to specify the effective batch size via PER_DEVICE_BATCH
         if not SELECTIVE_DP:
-            OUT_DIR = env_str("OUT_DIR", f"/storage/kaushik/outputs_smolvlm_fulldp_eps_{TARGET_EPS}_clip_{CLIP_NORM}_lr_{LR}_seed_{SEED}_{get_formatted_datetime_string()}")
+            OUT_DIR = env_str("OUT_DIR", f"outputs_smolvlm_fulldp_eps_{TARGET_EPS}_clip_{CLIP_NORM}_lr_{LR}_seed_{SEED}_{get_formatted_datetime_string()}")
             RUN_NAME = env_str("RUN_NAME", f"SmolVLM-FullDP-eps-{TARGET_EPS}-clip-{CLIP_NORM}-lr-{LR}-seed-{SEED}-{get_formatted_datetime_string()}")
         else:
-            OUT_DIR = env_str("OUT_DIR", f"/storage/kaushik/outputs_smolvlm_featdp_eps_{TARGET_EPS}_clip_{CLIP_NORM}_lr_{LR}_seed_{SEED}_{get_formatted_datetime_string()}")
+            OUT_DIR = env_str("OUT_DIR", f"outputs_smolvlm_featdp_eps_{TARGET_EPS}_clip_{CLIP_NORM}_lr_{LR}_seed_{SEED}_{get_formatted_datetime_string()}")
             RUN_NAME = env_str("RUN_NAME", f"SmolVLM-FeatDP-eps-{TARGET_EPS}-clip-{CLIP_NORM}-lr-{LR}-seed-{SEED}-{get_formatted_datetime_string()}")
     elif INCLUDE_IMG and INCLUDE_TEXT:
-        OUT_DIR = env_str("OUT_DIR", f"/storage/kaushik/outputs_smolvlm_cls_img_txt_{get_formatted_datetime_string()}")
+        OUT_DIR = env_str("OUT_DIR", f"outputs_smolvlm_cls_img_txt_{get_formatted_datetime_string()}")
         RUN_NAME = env_str("RUN_NAME", f"SmolVLM-Both-ImageTextClassification-{get_formatted_datetime_string()}")
     elif INCLUDE_IMG:
-        OUT_DIR = env_str("OUT_DIR", f"/storage/kaushik/outputs_smolvlm_cls_img_only_{get_formatted_datetime_string()}")
+        OUT_DIR = env_str("OUT_DIR", f"outputs_smolvlm_cls_img_only_{get_formatted_datetime_string()}")
         RUN_NAME = env_str("RUN_NAME", f"SmolVLM-ImageOnly-{get_formatted_datetime_string()}")
     elif INCLUDE_TEXT:
-        OUT_DIR = env_str("OUT_DIR", f"/storage/kaushik/outputs_smolvlm_cls_txt_only_{get_formatted_datetime_string()}")
+        OUT_DIR = env_str("OUT_DIR", f"outputs_smolvlm_cls_txt_only_{get_formatted_datetime_string()}")
         RUN_NAME = env_str("RUN_NAME", f"SmolVLM-TextOnly-{get_formatted_datetime_string()}")
 
     seed_everything(SEED)

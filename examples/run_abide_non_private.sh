@@ -98,7 +98,7 @@ export INCLUDE_SITE_ID_AS_FEATURE="${INCLUDE_SITE_ID_AS_FEATURE:-0}"
 # Output configuration
 # ============================================================
 
-BASE_OUT_DIR="${BASE_OUT_DIR:-/storage/kaushik/outputs_abide_linear_nonprivate}"
+BASE_OUT_DIR="${BASE_OUT_DIR:-outputs_abide_linear_nonprivate}"
 STAMP="$(date +%Y%m%d_%H%M%S)"
 
 mkdir -p "${BASE_OUT_DIR}"

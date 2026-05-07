@@ -129,8 +129,9 @@ def main():
 
     if USE_DP:
         if SELECTIVE_DP:
+            print("Feature DP")
             default_out = (
-                f"/storage/kaushik/outputs_abide_linear_featdp_"
+                f"outputs_abide_linear_featdp_"
                 f"eps_{TARGET_EPS}_clip_{CLIP_NORM}_lr_{LR}_seed_{SEED}_{timestamp}"
             )
             default_run = (
@@ -138,8 +139,9 @@ def main():
                 f"clip-{CLIP_NORM}-lr-{LR}-seed-{SEED}-{timestamp}"
             )
         else:
+            print("Full DP")
             default_out = (
-                f"/storage/kaushik/outputs_abide_linear_fulldp_"
+                f"outputs_abide_linear_fulldp_"
                 f"eps_{TARGET_EPS}_clip_{CLIP_NORM}_lr_{LR}_seed_{SEED}_{timestamp}"
             )
             default_run = (
@@ -147,13 +149,16 @@ def main():
                 f"clip-{CLIP_NORM}-lr-{LR}-seed-{SEED}-{timestamp}"
             )
     elif INCLUDE_FMRI and INCLUDE_SENSITIVE:
-        default_out = f"/storage/kaushik/outputs_abide_linear_fmri_sensitive_{timestamp}"
+        print("Both Non Private")
+        default_out = f"/outputs_abide_linear_fmri_sensitive_{timestamp}"
         default_run = f"ABIDE-Linear-fMRI-Sensitive-{timestamp}"
     elif INCLUDE_FMRI:
-        default_out = f"/storage/kaushik/outputs_abide_linear_fmri_only_{timestamp}"
+        print("fMRI Only")
+        default_out = f"outputs_abide_linear_fmri_only_{timestamp}"
         default_run = f"ABIDE-Linear-fMRIOnly-{timestamp}"
     else:
-        default_out = f"/storage/kaushik/outputs_abide_linear_sensitive_only_{timestamp}"
+        print("Sensitive Only")
+        default_out = f"outputs_abide_linear_sensitive_only_{timestamp}"
         default_run = f"ABIDE-Linear-SensitiveOnly-{timestamp}"
 
     OUT_DIR = env_str("OUT_DIR", default_out)

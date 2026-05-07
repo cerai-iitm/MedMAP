@@ -107,7 +107,7 @@ export INCLUDE_SITE_ID_AS_FEATURE="${INCLUDE_SITE_ID_AS_FEATURE:-0}"
 # Output configuration
 # ============================================================
 
-BASE_OUT_DIR="${BASE_OUT_DIR:-/storage/kaushik/outputs_abide_linear_private}"
+BASE_OUT_DIR="${BASE_OUT_DIR:-outputs_abide_linear_private}"
 STAMP="$(date +%Y%m%d_%H%M%S)"
 
 mkdir -p "${BASE_OUT_DIR}"
@@ -152,7 +152,7 @@ run_private() {
 # ============================================================
 
 # 1. Full DP-SGD: fMRI + sensitive
-run_private "fulldp_fmri_sensitive" 0
+#run_private "fulldp_fmri_sensitive" 0
 
 # 2. Feature-DP / Selective-DP: public=fMRI, private=sensitive
 run_private "featuredp_fmri_sensitive" 1
