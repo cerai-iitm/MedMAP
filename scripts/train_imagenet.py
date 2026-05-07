@@ -29,7 +29,7 @@ def main():
     MODEL_NAME = env_str("MODEL_NAME", "HuggingFaceTB/SmolVLM-256M-Base")
     SEED = env_int("SEED", 100)
     CAPTIONS_JSON = env_str("CAPTIONS_JSON", "/data/common/data/imagenet_captions.json")
-    ROOT_ZIP_PATH = env_str("ROOT_ZIP_PATH", "/")
+    ROOT_ZIP_PATH = env_str("ROOT_ZIP_PATH", "/data/common/data/imagenet_object_localization_challenge")
     TRAIN_TXT = env_str("TRAIN_TXT", "ILSVRC/ImageSets/CLS-LOC/train_cls.txt")
     
     EPOCHS = env_int("EPOCHS", 10) 

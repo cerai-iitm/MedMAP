@@ -39,7 +39,7 @@ export PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True,max_split_size_mb:128,g
 # ============================================================
 
 export CAPTIONS_JSON="/data/common/data/imagenet_captions.json"
-export ROOT_ZIP_PATH="/"
+export ROOT_ZIP_PATH="/data/common/data/imagenet_object_localization_challenge"
 export TRAIN_TXT="ILSVRC/ImageSets/CLS-LOC/train_cls.txt"
 
 # ============================================================
