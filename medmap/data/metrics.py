@@ -1,5 +1,14 @@
+from __future__ import annotations
 import numpy as np
 from typing import List, Dict, Any
+import numpy as np
+from sklearn.metrics import (
+    accuracy_score,
+    average_precision_score,
+    balanced_accuracy_score,
+    log_loss,
+    roc_auc_score,
+)
 
 def simple_accuracy(preds: np.ndarray, labels: np.ndarray) -> float:
     return (preds == labels).mean().item()
@@ -330,3 +339,40 @@ def build_compute_metrics(class_names: List[str]):
         }
 
     return compute_metrics
+
+def compute_binary_metrics_fn(eval_pred):
+    """
+    Binary metrics for ABIDE autism/control classification.
+
+    Compatible with HuggingFace Trainer's compute_metrics.
+    """
+    logits, labels = eval_pred
+
+    if isinstance(logits, tuple):
+        logits = logits[0]
+
+    logits = np.asarray(logits)
+    labels = np.asarray(labels).astype(int)
+
+    preds = np.argmax(logits, axis=-1)
+
+    shifted = logits - logits.max(axis=1, keepdims=True)
+    exp_logits = np.exp(shifted)
+    probs = exp_logits / exp_logits.sum(axis=1, keepdims=True)
+    pos_probs = probs[:, 1]
+
+    out = {
+        "accuracy": float(accuracy_score(labels, preds)),
+        "balanced_accuracy": float(balanced_accuracy_score(labels, preds)),
+        "log_loss": float(log_loss(labels, pos_probs, labels=[0, 1])),
+    }
+
+    if len(np.unique(labels)) == 2:
+        out["roc_auc"] = float(roc_auc_score(labels, pos_probs))
+        out["average_precision"] = float(average_precision_score(labels, pos_probs))
+    else:
+        out["roc_auc"] = float("nan")
+        out["average_precision"] = float("nan")
+
+    return out
+

@@ -49,7 +49,7 @@ print("Metadata:", meta)
 # Print min and max values in X_conn to check for any anomalies
 print("X_conn min value:", np.min(X_conn))
 print("X_conn max value:", np.max(X_conn))
-abide.phenotypic
+
 
 # Metrics FDP Multiseed per Target Epsilon
 #!/usr/bin/env python3

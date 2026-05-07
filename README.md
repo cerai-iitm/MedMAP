@@ -1,8 +1,6 @@
 # MedMAP: A Clinically Grounded Multi-Modal Benchmark for Modality-Asymmetric Privacy
 
 
-# MedMAP
-
 MedMAP is a software package for benchmarking differentially private multimodal learning across image, text, and tabular/phenotypic data.
 
 The current repository supports experiments on:

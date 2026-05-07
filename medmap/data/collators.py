@@ -1,3 +1,4 @@
+from __future__ import annotations
 import io
 import os
 import torch
@@ -306,3 +307,63 @@ class Gemma3HeteroNoDummyCollator:
             batch["pixel_values"] = pixel_values
 
         return dict(batch)
+
+
+@dataclass
+class ABIDELinearCollator:
+    """
+    Collator for LinearABIDEForSequenceClassification.
+
+    INCLUDE_FMRI=True:
+        keep fMRI feature block.
+
+    INCLUDE_SENSITIVE=True:
+        keep sensitive phenotype feature block.
+
+    If a modality is disabled, we keep its tensor shape but zero it out and
+    pass has_*_flags=False. This keeps the model input dimension fixed.
+    """
+
+    want_fmri: bool = True
+    want_sensitive: bool = True
+
+    def __call__(self, features: list[dict]) -> dict:
+        fmri = torch.tensor(
+            [f["fmri_features"] for f in features],
+            dtype=torch.float32,
+        )
+        sensitive = torch.tensor(
+            [f["sensitive_features"] for f in features],
+            dtype=torch.float32,
+        )
+        labels = torch.tensor(
+            [f["labels"] for f in features],
+            dtype=torch.long,
+        )
+
+        batch_size = labels.shape[0]
+
+        has_fmri_flags = torch.full(
+            (batch_size,),
+            bool(self.want_fmri),
+            dtype=torch.bool,
+        )
+        has_sensitive_flags = torch.full(
+            (batch_size,),
+            bool(self.want_sensitive),
+            dtype=torch.bool,
+        )
+
+        if not self.want_fmri:
+            fmri = torch.zeros_like(fmri)
+
+        if not self.want_sensitive:
+            sensitive = torch.zeros_like(sensitive)
+
+        return {
+            "fmri_features": fmri,
+            "sensitive_features": sensitive,
+            "labels": labels,
+            "has_fmri_flags": has_fmri_flags,
+            "has_sensitive_flags": has_sensitive_flags,
+        }
