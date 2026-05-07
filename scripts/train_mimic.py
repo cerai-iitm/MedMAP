@@ -142,7 +142,7 @@ def main():
     os.environ["WANDB_MODE"] = args.wandb_mode
 
     # 2. Data Preparation
-    ds, num_labels, class_names = build_mimic_chexpert_dataset(args.top_level_buckets, args.xrv_root, args.chexpert_csv, args.report_root, drop_all_nan_rows=True)
+    ds, num_labels, class_names = build_mimic_chexpert_dataset(args.top_level_buckets, args.chexpert_csv, args.report_root, drop_all_nan_rows=True)
     splits = split_mimic_dataset_official_by_ids(
         ds=ds, 
         split_csv_path=args.split_csv,

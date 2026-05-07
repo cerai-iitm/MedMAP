@@ -139,7 +139,6 @@ def split_mimic_dataset_official_by_ids(
 
 def build_mimic_chexpert_dataset(
     top_level_buckets: List[str],
-    mimic_best_img_dump: str,
     chexpert_csv: str,
     report_root: str,
     drop_all_nan_rows: bool = True,

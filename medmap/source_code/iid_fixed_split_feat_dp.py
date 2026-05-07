@@ -358,18 +358,7 @@ EXPERIMENTS = [
             "recommended_initial_categorical",
             "optional_categorical_with_caution",
         ],
-    },
-    # {
-    #     "experiment_key": "feature_dp_with_anat_func",
-    #     "experiment_name": "Feature DP with anat & func",
-    #     "tuned_C": TUNED_C_With_AnatFunc,
-    #     "feature_group_keys": [
-    #         "recommended_initial_numeric_or_binary",
-    #         "recommended_initial_categorical",
-    #         "optional_categorical_with_caution",
-    #         "anat_func_numeric_or_binary",
-    #     ],
-    # },
+    }
 ]
 
 
