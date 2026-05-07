@@ -17,10 +17,6 @@ cd "${REPO_ROOT}"
 TRAIN_FILE="scripts/train_abide.py"
 TRAIN_MODULE="scripts.train_abide"
 
-# Use these instead if the file is actually scripts/train_abide_linear.py
-# TRAIN_FILE="scripts/train_abide_linear.py"
-# TRAIN_MODULE="scripts.train_abide_linear"
-
 # Sanity check to make sure we are really in the MedMAP root
 if [[ ! -d "medmap" || ! -f "${TRAIN_FILE}" ]]; then
     echo "Error: Could not locate MedMAP repository root."
