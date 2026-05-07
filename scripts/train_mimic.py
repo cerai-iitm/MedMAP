@@ -31,7 +31,6 @@ def main():
     ap.add_argument("--seed", type=int, default=42)
 
     ap.add_argument("--top_level_buckets", type=str, nargs="+", required=True)
-    ap.add_argument("--xrv_root", type=str, required=True)
     ap.add_argument("--chexpert_csv", type=str, required=True)
     ap.add_argument("--split_csv", type=str, required=True)
     ap.add_argument("--report_root", type=str, required=True)

@@ -30,12 +30,11 @@ echo "Using training entrypoint: ${TRAIN_MODULE}"
 export CUDA_VISIBLE_DEVICES=1
 
 python -m scripts.train_mimic \
-  --output_root /storage/kaushik \
+  --output_root output_mimic_private \
   --top_level_buckets p10 p11 p12 \
-  --xrv_root /data/kaushik/MedGemma/mimic/xrv_all_vs_mimic_ch_model_comparison \
-  --chexpert_csv /storage/kaushik/datasets/mimic_cxr/physionet.org/files/mimic-cxr-jpg/2.0.0/mimic-cxr-2.0.0-chexpert.csv \
-  --split_csv /storage/kaushik/datasets/mimic_cxr/physionet.org/files/mimic-cxr-jpg/2.0.0/mimic-cxr-2.0.0-split.csv \
-  --report_root /storage/kaushik/datasets/mimic_cxr/physionet.org/files/mimic-cxr/2.1.0/files/ \
+  --chexpert_csv /path/to/file/mimic-cxr-2.0.0-chexpert.csv \
+  --split_csv /path/to/file/mimic-cxr-2.0.0-split.csv \
+  --report_root /path/to/downloaded_mimic/mimic_cxr/physionet.org/files/mimic-cxr/2.1.0/files/ \
   --no-bf16 \
   --no-tf32 \
   --use_dp \
