@@ -1,7 +1,32 @@
-# Python cache files
+# Python
 __pycache__/
 *.py[cod]
-*$py.class
+*.egg-info/
+build/
+dist/
+.eggs/
 
+# Environments
+.venv/
+venv/
+.conda/
+
+# Experiment outputs
+outputs/
+outputs_*/
+checkpoints/
 wandb/
-outputs*
+*.log
+
+# Data (never commit datasets)
+data/
+*.npz
+dataset_cache/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Jupyter
+.ipynb_checkpoints/

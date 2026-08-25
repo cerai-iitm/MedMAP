@@ -1,54 +1,50 @@
-# MedMAP requirements.txt
-# Generated from the attached environment.yml and the uploaded Python source files.
-# Low-level conda/system packages, Jupyter-only packages, and unused packages were removed.
+# MedMAP pinned reference environment.
+# These are the exact versions used for the results reported in the paper.
+# `pip install -r requirements.txt` recreates that environment; for a more
+# flexible install use `pip install -e ".[all]"` instead (ranged pins).
 
-# -------------------------
 # Core numerical / data stack
-# -------------------------
 numpy==2.3.3
 pandas==2.3.3
 scipy==1.16.2
 scikit-learn==1.7.2
 joblib==1.5.2
 
-# -------------------------
-# Plotting / analysis
-# -------------------------
+# Plotting / analysis (ABIDE summaries)
 matplotlib==3.10.6
 seaborn==0.13.2
 
-# -------------------------
 # Medical imaging / neuroimaging / image handling
-# -------------------------
 nilearn==0.13.1
 Pillow==11.3.0
 
-# -------------------------
-# PyTorch + HuggingFace stack
-# -------------------------
+# PyTorch + Hugging Face stack
 torch==2.8.0
+torchvision==0.23.0
 transformers==4.57.0
 accelerate==1.10.1
 datasets==4.1.1
 peft==0.17.1
 
-# -------------------------
 # Differential privacy
-# -------------------------
 opacus==1.5.4
 dp-accounting==0.5.0
-prv-accountant-0.2.0
-# Required by imports such as dp_transformers.arguments.PrivacyArguments.
-# This package was not listed in the attached environment.yml, so it is left unpinned.
-#dp-transformers
 
-# -------------------------
-# Experiment tracking / system monitoring
-# -------------------------
+# Experiment tracking / system monitoring (optional but pinned)
 wandb==0.22.2
 psutil==7.1.0
 
-# -------------------------
-# Optional acceleration used by ABIDE DP scripts
-# -------------------------
+# ABIDE classic backend acceleration (JIT-compiled DP-GD / Feature-DP kernels)
 numba==0.65.0
+
+# MIMIC-CXR report extraction (vendored NegBio patterns are YAML)
+PyYAML==6.0.2
+
+# Dataset download helper (PAD-UFES-20)
+requests==2.32.3
+
+# NOTE: dp-transformers is NOT installed from PyPI. This repository ships a
+# modified copy under library/dp-transformers/ (see THIRD_PARTY_NOTICES.md);
+# it is picked up automatically by `pip install -e .` consumers through
+# scripts/_bootstrap.py, or install it explicitly with:
+#   pip install -e library/dp-transformers

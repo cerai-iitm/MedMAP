@@ -6,8 +6,11 @@ def setup_project_paths() -> Path:
     """
     Add the repository root and vendored dependencies to sys.path.
 
-    This allows scripts to run without requiring editable installation of
-    the local MedMAP package or vendored dp-transformers.
+    This allows every entry point under scripts/ to run directly from a
+    repository checkout (``python -m scripts.<name>`` from the repo root)
+    without requiring ``pip install -e .``. If the medmap package and the
+    vendored dp-transformers fork are already installed, the inserted paths
+    simply shadow-resolve to the same code.
     """
     repo_root = Path(__file__).resolve().parents[1]
 

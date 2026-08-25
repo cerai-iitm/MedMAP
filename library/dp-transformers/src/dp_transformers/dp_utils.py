@@ -15,7 +15,11 @@ from dp_transformers.custom_trainer import Trainer
 from transformers.file_utils import is_sagemaker_mp_enabled, is_datasets_available
 import opacus
 from opacus.accountants import RDPAccountant
-from prv_accountant import Accountant as PRVAccountant
+# MedMAP modification: the prv_accountant import was removed. All of its usages
+# were already commented out in this fork (privacy accounting is done with
+# Google dp_accounting in arguments.find_noise_multiplier), so the import only
+# forced an unnecessary dependency.
+# from prv_accountant import Accountant as PRVAccountant
 from contextlib import contextmanager
 from typing import Any, Callable, List, Optional, Union, Dict, Sequence
 from accelerate.optimizer import AcceleratedOptimizer
@@ -196,7 +200,7 @@ class OpacusDPTrainer(Trainer):
         callbacks_list = kwargs.pop("callbacks", [])
         callbacks_list = [self.dp_callback, *callbacks_list]
         args.gradient_accumulation_steps = 1
-        super().__init__(model=model, args=args, train_dataset=train_dataset, callbacks=callbacks_list, public_batch=self.privacy_args.selective_dp, **kwargs)
+        super().__init__(model=model, args=args, train_dataset=train_dataset, callbacks=callbacks_list, public_batch=self.privacy_args.feature_dp, **kwargs)
         self._accumulated_grad_samples = None  # will be list of tensors per param or None
 
     @property
@@ -222,7 +226,7 @@ class OpacusDPTrainer(Trainer):
             noise_multiplier=self.privacy_args.noise_multiplier,
             max_grad_norm=self.privacy_args.per_sample_max_grad_norm,
             expected_batch_size=self.args.per_device_train_batch_size,
-            selective_dp=self.privacy_args.selective_dp,
+            feature_dp=self.privacy_args.feature_dp,
             gradient_accumulation_steps=self.train_args.gradient_accumulation_steps, #still actual gradient_acc steps
         )
 
@@ -376,7 +380,7 @@ class OpacusDPTrainer(Trainer):
                 raise NotImplementedError("DP currently doesn't support this")
 
             with self.compute_loss_context_manager():
-                loss = self.compute_loss(model, inputs, public=False, selective_dp=self.privacy_args.selective_dp)
+                loss = self.compute_loss(model, inputs, public=False, feature_dp=self.privacy_args.feature_dp)
                 # print("Computed Net Loss")
                 # print_gpu_memory()
 
@@ -392,7 +396,7 @@ class OpacusDPTrainer(Trainer):
                 # print_gpu_memory()
             #-------------------------------------------------------------------------
 
-            if self.privacy_args.selective_dp:  
+            if self.privacy_args.feature_dp:  
                 priv_grads = [
                     p.grad_sample.clone() / (self.user_grad_acc) if hasattr(p, "grad_sample") and p.grad_sample is not None else None
                     for p in model.parameters()
@@ -403,7 +407,7 @@ class OpacusDPTrainer(Trainer):
 
                 ## PUBLIC GRADIENT CALCULATION:
                 with self.compute_loss_context_manager():
-                    pub_loss = self.compute_loss(model, public_inputs, public=True, selective_dp=True)
+                    pub_loss = self.compute_loss(model, public_inputs, public=True, feature_dp=True)
                     # print("Computed Public Loss")
                     # print_gpu_memory()
 
@@ -473,7 +477,7 @@ class OpacusDPTrainer(Trainer):
             self._accumulate_grad_samples(model)
             total_loss += loss.detach()
         
-        if self.privacy_args.selective_dp and isinstance(original_optimizer, custom_adam.CustomAdamW):
+        if self.privacy_args.feature_dp and isinstance(original_optimizer, custom_adam.CustomAdamW):
             print("Public step with second moment update")
             for p, pub in zip(model.parameters(), self.public_buffer):
                 if pub is not None:

@@ -1,0 +1,77 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "medmap"
+version = "1.0.0"
+description = "MedMAP: a benchmark for multimodal medical machine learning under differential privacy (non-private / DP-SGD / Feature-DP) on MIMIC-CXR, ABIDE, PAD-UFES-20, and Tiny ImageNet."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [{ name = "The MedMAP Authors" }]
+keywords = [
+    "differential-privacy",
+    "benchmark",
+    "medical-imaging",
+    "multimodal",
+    "MIMIC-CXR",
+    "ABIDE",
+    "PAD-UFES-20",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+# Core dependencies only. Heavyweight / experiment-specific extras are grouped
+# below so that, e.g., preprocessing-only users do not need torch.
+dependencies = [
+    "numpy",
+    "pandas",
+    "scipy",
+    "scikit-learn",
+    "joblib",
+    "PyYAML",
+]
+
+[project.optional-dependencies]
+# Deep-learning experiments (MIMIC-CXR / Tiny ImageNet / ABIDE HF backend / PAD-UFES).
+torch = [
+    "torch>=2.1",
+    "torchvision",
+    "transformers>=4.44",
+    "accelerate",
+    "datasets",
+    "peft",
+    "opacus>=1.4",
+    "dp-accounting>=0.4",
+    "Pillow",
+    "psutil",
+]
+# ABIDE classic backend (sklearn LBFGS + NumPy/Numba DP-GD & Feature-DP).
+abide = [
+    "nilearn>=0.10",
+    "numba>=0.59",
+    "dp-accounting>=0.4",
+    "matplotlib",
+    "seaborn",
+]
+# Experiment tracking.
+wandb = ["wandb"]
+# Dataset download helpers.
+download = ["requests"]
+all = ["medmap[torch,abide,wandb,download]"]
+
+[tool.setuptools.packages.find]
+include = ["medmap*"]
+
+[tool.setuptools.package-data]
+"medmap.datasets.imagenet" = ["splits/*.npy"]
+"medmap.datasets.abide" = ["resources/*.json"]
+"medmap.datasets.mimic_cxr" = [
+    "vendor/**/*",
+]

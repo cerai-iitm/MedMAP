@@ -1,0 +1,123 @@
+# Tiny ImageNet / ImageNet-Captions: images + captions (SmolVLM)
+
+200-class image classification with SmolVLM
+(`HuggingFaceTB/SmolVLM-256M-Base`, LoRA fine-tuning). Images are the public
+modality; the Flickr-derived caption text (title + tags + description from
+ImageNet-Captions) is the private modality. This non-medical arm sanity-checks
+the privacy mechanisms on a standard vision-language task.
+
+Contents: [Download](#1-download) · [Dataset assembly](#2-dataset-assembly) ·
+[Training](#3-training) · [License & citations](#4-license--citations)
+
+---
+
+## 1. Download
+
+Three ingredients:
+
+1. **ImageNet (ILSVRC 2012) training images** — from the Kaggle
+   [ImageNet Object Localization Challenge](https://www.kaggle.com/c/imagenet-object-localization-challenge):
+
+   ```bash
+   pip install kaggle   # + place your API token at ~/.kaggle/kaggle.json
+   kaggle competitions download -c imagenet-object-localization-challenge
+   # keep the zip, or unzip it — the loader supports both:
+   #   ROOT_ZIP_PATH=/data/imagenet_object_localization_challenge[.zip]
+   ```
+
+   Access requires accepting the ImageNet terms (non-commercial research /
+   educational use).
+
+2. **ImageNet-Captions JSON** — Flickr titles/tags/descriptions for ~450k
+   ImageNet train images, from
+   [mlfoundations/imagenet-captions](https://github.com/mlfoundations/imagenet-captions):
+
+   ```bash
+   git clone https://github.com/mlfoundations/imagenet-captions
+   # -> imagenet_captions.json ; set CAPTIONS_JSON to its path
+   ```
+
+3. **Tiny ImageNet class list** — the 200-class subset is defined by
+   `wnids.txt` from [tiny-imagenet-200](http://cs231n.stanford.edu/tiny-imagenet-200.zip):
+
+   ```bash
+   wget http://cs231n.stanford.edu/tiny-imagenet-200.zip && unzip tiny-imagenet-200.zip
+   export TINY_IMAGENET_WNIDS=/data/tiny-imagenet-200/wnids.txt
+   ```
+
+## 2. Dataset assembly
+
+`medmap/datasets/imagenet/builder.py` joins the captions JSON with the
+ILSVRC train listing, builds `<image> <title> <tags> <description>` prompts,
+and filters to the 200 Tiny ImageNet classes. Splitting is either stratified
+60/20/20 by `SEED` (default) or, with `USE_SPLIT_IDX=1`, the fixed index
+files packaged at `medmap/datasets/imagenet/splits/` (the exact split used
+for the reported runs).
+
+## 3. Training
+
+This experiment family is preserved as-is from the original MedMAP
+implementation (env-var configuration), with two fixes: `GRAD_CHECKPOINT=1`
+no longer crashes (the gradient-checkpointing call now happens after model
+creation) and the Tiny ImageNet class list is configurable via
+`TINY_IMAGENET_WNIDS`.
+
+```bash
+export CAPTIONS_JSON=/data/imagenet_captions.json
+export ROOT_ZIP_PATH=/data/imagenet_object_localization_challenge
+export TINY_IMAGENET_WNIDS=/data/tiny-imagenet-200/wnids.txt
+
+# Non-private (modalities via INCLUDE_IMG / INCLUDE_TEXT)
+bash examples/run_imagenet_non_private.sh
+
+# Full DP-SGD (FEATURE_DP=0) or Feature-DP (FEATURE_DP=1; image public,
+# caption text private)
+FEATURE_DP=1 TARGET_EPS=1.0 bash examples/run_imagenet_private.sh
+```
+
+Notable variables: `SEED` (100), `EPOCHS` (10), `BATCH`/`GRAD_ACCUM` (in DP
+mode the per-device batch becomes `BATCH*GRAD_ACCUM`), `LR`, `MAX_LENGTH`
+(128), `USE_LORA`/`LORA_R`/`LORA_ALPHA`/`LORA_DROPOUT`, `CLIP_NORM`,
+`WANDB_MODE=disabled` to turn W&B off.
+
+## 4. License & citations
+
+**Data terms:** ImageNet is available for non-commercial research and
+educational purposes under its terms of access; Tiny ImageNet and
+ImageNet-Captions derive from it. ImageNet-Captions metadata originates from
+Flickr and is subject to the original uploaders' terms. No image or caption
+data is redistributed with this repository.
+**Model:** SmolVLM is released under Apache-2.0.
+
+```bibtex
+@inproceedings{deng2009imagenet,
+  title     = {ImageNet: A large-scale hierarchical image database},
+  author    = {Deng, Jia and Dong, Wei and Socher, Richard and Li, Li-Jia and Li, Kai and Fei-Fei, Li},
+  booktitle = {CVPR}, pages = {248--255}, year = {2009}
+}
+
+@article{russakovsky2015ilsvrc,
+  title   = {ImageNet Large Scale Visual Recognition Challenge},
+  author  = {Russakovsky, Olga and Deng, Jia and Su, Hao and Krause, Jonathan and Satheesh, Sanjeev and Ma, Sean and Huang, Zhiheng and Karpathy, Andrej and Khosla, Aditya and Bernstein, Michael and others},
+  journal = {International Journal of Computer Vision}, volume = {115}, pages = {211--252}, year = {2015}
+}
+
+@techreport{le2015tinyimagenet,
+  title       = {Tiny ImageNet Visual Recognition Challenge},
+  author      = {Le, Ya and Yang, Xuan},
+  institution = {Stanford CS231N}, year = {2015}
+}
+
+@inproceedings{fang2022imagenetcaptions,
+  title     = {Data determines distributional robustness in contrastive language image pre-training (CLIP)},
+  author    = {Fang, Alex and Ilharco, Gabriel and Wortsman, Mitchell and Wan, Yuhao and Shankar, Vaishaal and Dave, Achal and Schmidt, Ludwig},
+  booktitle = {International Conference on Machine Learning (ICML)}, year = {2022},
+  note      = {source of ImageNet-Captions}
+}
+
+@article{marafioti2025smolvlm,
+  title   = {SmolVLM: Redefining small and efficient multimodal models},
+  author  = {Marafioti, Andr{\'e}s and Zohar, Orr and Farr{\'e}, Miquel and Noyan, Merve and Bakouch, Elie and Cuenca, Pedro and Zakka, Cyril and Ben Allal, Loubna and Lozhkov, Anton and Tazi, Nouamane and others},
+  journal = {arXiv preprint arXiv:2504.05299}, year = {2025}
+}
+```

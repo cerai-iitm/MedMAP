@@ -3913,7 +3913,7 @@ class Trainer:
         inputs: dict[str, Union[torch.Tensor, Any]],
         return_outputs: bool = False,
         public: Optional[bool] = False,
-        selective_dp: Optional[bool] = False,
+        feature_dp: Optional[bool] = False,
         num_items_in_batch: Optional[torch.Tensor] = None,
     ):
         """
@@ -3944,7 +3944,7 @@ class Trainer:
             if num_items_in_batch is not None:
                 kwargs["num_items_in_batch"] = num_items_in_batch
             inputs = {**inputs, **kwargs}
-        outputs = model(**inputs, public=public, selective_dp=selective_dp)
+        outputs = model(**inputs, public=public, feature_dp=feature_dp)
         # Save past state if it exists
         # TODO: this needs to be fixed and made cleaner later.
         if self.args.past_index >= 0:

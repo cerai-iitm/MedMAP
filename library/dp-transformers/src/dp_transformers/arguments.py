@@ -33,8 +33,8 @@ class PrivacyArguments:
     disable_dp: bool = field(default=False, metadata={
         "help": "Disable DP training."
     })
-    selective_dp: bool = field(default=False, metadata={
-        "help": "Enable Selective DP Algorithm"
+    feature_dp: bool = field(default=False, metadata={
+        "help": "Enable Feature-DP Algorithm"
     })
     
 

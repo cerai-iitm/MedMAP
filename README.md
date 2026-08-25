@@ -1,755 +1,226 @@
-# MedMAP: A Clinically Grounded Multi-Modal Benchmark for Modality-Asymmetric Privacy
+# MedMAP: A Benchmark for Multimodal Medical Machine Learning under Differential Privacy
 
-<p align="justify">
-Multi-modal data is increasingly used in high-stakes domains such as healthcare, where different modalities often exhibit unequal privacy sensitivity. For example, clinical text reports or patient attributes may be substantially more privacy-sensitive than imaging data, while also containing highly informative signals for downstream prediction tasks. We study this setting of modality-asymmetric privacy, where only a subset of modalities requires strong differential privacy (DP) guarantees. MedMAP provides a software package for benchmarking full DP and feature-level / modality-aware DP across image, text, and tabular/phenotypic data.
-</p>
+MedMAP evaluates how much utility multimodal medical models retain when the
+**sensitive modality** of each dataset is protected with differential
+privacy. Every dataset pairs a *public* modality (imaging) with a *private*
+modality (text or tabular clinical data), and every task is run under three
+regimes on identical data pipelines:
 
-The current repository supports three experiment families:
+1. **Non-private** training (with per-modality ablations),
+2. **DP-SGD** — the standard baseline: every example's entire gradient is
+   clipped and noised, and
+3. **Feature-DP** (ours) — only the gradient component attributable to the
+   private modality is clipped and noised; the public component stays exact.
+   At equal privacy budget ε, Feature-DP consistently retains more utility.
 
-1. **ImageNet + SmolVLM**
-2. **MIMIC-CXR + MedGemma**
-3. **ABIDE + linear/logistic classifier**
+## Datasets & tasks
 
-The repository is organized so that most experiments can be launched using the bash scripts under `examples/`. These scripts resolve the repository root automatically, check that the expected training entrypoint exists, and then launch the corresponding Python module.
+| Dataset | Task | Public modality | Private modality | Model | Doc |
+| --- | --- | --- | --- | --- | --- |
+| [MIMIC-CXR](docs/mimic_cxr.md) | 12-label CheXpert pathology classification | chest X-ray | leakage-filtered radiology report | MedGemma-4B (LoRA) | [docs/mimic_cxr.md](docs/mimic_cxr.md) |
+| [ABIDE I](docs/abide.md) | autism vs. control | fMRI functional connectivity | phenotypic record | logistic regression (sklearn **and** HF backends) | [docs/abide.md](docs/abide.md) |
+| [PAD-UFES-20](docs/pad_ufes.md) | 6-class skin-lesion diagnosis | lesion photo (EfficientNet-B3 features) | clinical questionnaire | MLP head | [docs/pad_ufes.md](docs/pad_ufes.md) |
+| [Tiny ImageNet](docs/imagenet.md) | 200-class classification | image | Flickr caption (ImageNet-Captions) | SmolVLM-256M (LoRA) | [docs/imagenet.md](docs/imagenet.md) |
 
----
+No dataset content is redistributed here. Each doc page walks through
+access/credentialing, exact download commands, expected directory layout,
+preprocessing, training, and the required citations and license terms.
 
-## 1. Installation
+## Repository layout
 
-Clone the repository:
+```
+medmap/                      the Python package
+├── common/                  seeding, env helpers, shared utilities
+├── datasets/
+│   ├── mimic_cxr/           image selection, leakage-filtered report
+│   │                        extraction (vendored official CheXpert/NegBio/
+│   │                        mimic-code resources), cached dataset builder
+│   ├── abide/               HF data pipeline + packaged feature lists
+│   └── imagenet/            ImageNet-Captions builder + fixed split indices
+├── models/                  medgemma, smolvlm, abide_linear, pad_mlp —
+│                            unified forward contract (public= / feature_dp=)
+│                            so models are swappable under one DP trainer
+├── training/                trainers (standard + DP), collators, callbacks,
+│                            metrics
+├── abide_classic/           faithful packaging of the original ABIDE
+│                            research scripts (sklearn LBFGS + NumPy/Numba
+│                            DP-GD & Feature-DP + summarizers)
+└── pad/                     PAD-UFES-20 pipeline (features, DP loops)
 
-```bash
-git clone https://github.com/<anonymous-or-your-username>/MedMAP.git
-cd MedMAP
+scripts/                     runnable entry points (python -m scripts.<name>)
+examples/                    ready-to-edit bash launchers for every arm
+docs/                        per-dataset guides + W&B setup
+library/dp-transformers/     vendored, MODIFIED dp-transformers fork — the
+                             DP/Feature-DP backbone (see MODIFICATIONS.md)
+tests/                       unit tests (report leakage filtering)
 ```
 
-Create and activate the environment:
+## Installation
 
 ```bash
-conda create -n medmap python=3.10 -y
-conda activate medmap
-```
+git clone <repository-url> MedMAP && cd MedMAP
+conda create -n medmap python=3.11 -y && conda activate medmap
 
-Install the package in editable mode:
-
-```bash
-pip install -e .
-```
-
-Install additional dependencies:
-
-```bash
+# Reference environment (exact pins used for the reported results):
 pip install -r requirements.txt
+# ...or a flexible install:
+pip install -e ".[all]"
 ```
 
-Optional but recommended: authenticate with Weights & Biases if you want experiment logging:
+The vendored dp-transformers fork is picked up automatically when running
+via `python -m scripts.<name>` from the repository root (a small bootstrap
+adds `library/dp-transformers/src` to `sys.path`). To use it outside the
+repo: `pip install -e library/dp-transformers`.
+
+GPU requirements: MedGemma fine-tuning was run on a single Nvidia L40S GPU
+(bf16, LoRA), ABIDE, PAD and Imagenet experiments fit on much smaller
+GPUs, and the ABIDE classic backend is CPU-only (NumPy/Numba).
+
+## Quick start
+
+Each dataset has a two-step pattern — prepare once, then sweep:
 
 ```bash
-wandb login
-```
+# --- MIMIC-CXR (after PhysioNet download, see docs/mimic_cxr.md) ---
+python -m scripts.select_mimic_images p10 p11 p12 --dataset-root ... --output-root ...
+python -m scripts.extract_mimic_reports --shard p10 p11 p12 --reports-root ...
+bash examples/run_mimic_non_private.sh          # or run_mimic_private.sh
 
----
+# --- ABIDE I (see docs/abide.md) ---
+python -m scripts.extract_abide_features --data-dir $ABIDE_DATA_DIR
+bash examples/run_abide_classic.sh              # sklearn/NumPy backend (paper results)
+bash examples/run_abide_hf_private.sh           # HF backend (same DP stack as the deep models)
 
-## 2. Repository entrypoints
+# --- PAD-UFES-20 (auto-downloads, see docs/pad_ufes.md) ---
+bash examples/run_pad.sh
 
-The provided bash scripts use the following Python modules:
-
-| Experiment | Non-private script | Private script | Python module |
-|---|---|---|---|
-| ImageNet + SmolVLM | `examples/run_imagenet_non_private.sh` | `examples/run_imagenet_private.sh` | `scripts.train_imagenet` |
-| MIMIC-CXR + MedGemma | `examples/run_mimic_non_private.sh` | `examples/run_mimic_private.sh` | `scripts.train_mimic` |
-| ABIDE + linear model | `examples/run_abide_non_private.sh` | `examples/run_abide_private.sh` | `scripts.train_abide` |
-
-Make the scripts executable once:
-
-```bash
-chmod +x examples/run_*.sh
-```
-
-Then launch experiments with:
-
-```bash
-bash examples/run_imagenet_non_private.sh
-bash examples/run_imagenet_private.sh
-bash examples/run_mimic_non_private.sh
-bash examples/run_mimic_private.sh
-bash examples/run_abide_non_private.sh
-bash examples/run_abide_private.sh
-```
-
----
-
-## 3. General execution notes
-
-This repository does **not** include dataset files. Users must download datasets separately and provide the corresponding local paths through either:
-
-1. exported environment variables in the bash scripts, or
-2. command-line arguments passed inside the bash scripts.
-
-Large datasets such as ImageNet, MIMIC-CXR, MIMIC-CXR-JPG, and ABIDE should not be committed to the repository.
-
-Recommended `.gitignore` entries:
-
-```bash
-data/
-outputs/
-checkpoints/
-wandb/
-*.zip
-*.tar.gz
-*.csv.gz
-```
-
-All scripts assume they are placed inside `examples/` and that the repository root contains both:
-
-```bash
-medmap/
-scripts/
-```
-
----
-
-# 4. ImageNet + SmolVLM
-
-## 4.1 Dataset setup
-
-Download the ImageNet Object Localization Challenge dataset from Kaggle:
-
-```text
-https://www.kaggle.com/competitions/imagenet-object-localization-challenge/data
-```
-
-Install and configure the Kaggle CLI:
-
-```bash
-pip install kaggle
-mkdir -p ~/.kaggle
-# Place kaggle.json in ~/.kaggle/kaggle.json
-chmod 600 ~/.kaggle/kaggle.json
-```
-
-Choose a local dataset directory:
-
-```bash
-export IMAGENET_DIR=/data/common/data/imagenet_object_localization_challenge
-mkdir -p "${IMAGENET_DIR}"
-```
-
-Download and extract ImageNet:
-
-```bash
-kaggle competitions download \
-  -c imagenet-object-localization-challenge \
-  -p "${IMAGENET_DIR}"
-
-unzip "${IMAGENET_DIR}/imagenet-object-localization-challenge.zip" \
-  -d "${IMAGENET_DIR}"
-```
-
-Download ImageNet-Captions:
-
-```bash
-export IMAGENET_CAP_DIR=/data/common/data/imagenet_captions
-mkdir -p "${IMAGENET_CAP_DIR}"
-
-git clone https://github.com/mlfoundations/imagenet-captions.git "${IMAGENET_CAP_DIR}"
-
-unzip "${IMAGENET_CAP_DIR}/imagenet_captions.zip" \
-  -d "${IMAGENET_CAP_DIR}"
-```
-
-## 4.2 ImageNet variables used by the scripts
-
-The ImageNet scripts use environment variables inside the bash files. Before running, check or edit these values in:
-
-```bash
-examples/run_imagenet_non_private.sh
-examples/run_imagenet_private.sh
-```
-
-Important dataset variables:
-
-```bash
-export CAPTIONS_JSON="/data/common/data/imagenet_captions.json"
-export ROOT_ZIP_PATH="/data/common/data/imagenet_object_localization_challenge"
-export TRAIN_TXT="ILSVRC/ImageSets/CLS-LOC/train_cls.txt"
-```
-
-Meaning:
-
-| Variable | Meaning |
-|---|---|
-| `CAPTIONS_JSON` | Path to the ImageNet-Captions JSON file. |
-| `ROOT_ZIP_PATH` | Root directory containing the ImageNet Object Localization Challenge data. |
-| `TRAIN_TXT` | Relative path to ImageNet train split file, usually `ILSVRC/ImageSets/CLS-LOC/train_cls.txt`. |
-| `USE_SPLIT_IDX` | If `1`, loads predefined train/val/test indices from `medmap/data/split/imagenet/`. If `0`, creates a stratified split. |
-
-## 4.3 Running ImageNet non-private experiments
-
-Run:
-
-```bash
-bash examples/run_imagenet_non_private.sh
-```
-
-The non-private ImageNet script supports image-only, text-only, and image+text training by editing:
-
-```bash
-export INCLUDE_IMG=1
-export INCLUDE_TEXT=1
-```
-
-Use the following settings:
-
-| Setting | `INCLUDE_IMG` | `INCLUDE_TEXT` |
-|---|---:|---:|
-| Image + text | `1` | `1` |
-| Image only | `1` | `0` |
-| Text only | `0` | `1` |
-
-For example, for image-only non-private training:
-
-```bash
-export INCLUDE_IMG=1
-export INCLUDE_TEXT=0
-```
-
-For text-only non-private training:
-
-```bash
-export INCLUDE_IMG=0
-export INCLUDE_TEXT=1
-```
-
-Do not set both to `0`, because the model would receive no input modality.
-
-## 4.4 Running ImageNet private experiments
-
-Run:
-
-```bash
+# --- Tiny ImageNet / SmolVLM (see docs/imagenet.md) ---
 bash examples/run_imagenet_private.sh
 ```
 
-In private ImageNet training, the Python code forces both modalities to be active:
-
-```bash
-INCLUDE_IMG=1
-INCLUDE_TEXT=1
-```
-
-Therefore, modality ablations should be done using the **non-private** script. The private script is for comparing privacy mechanisms on the multimodal setting.
-
-To choose between Full DP-SGD and Feature DP / Selective DP, edit:
-
-```bash
-export USE_DP=1
-export SELECTIVE_DP=1
-```
-
-Use:
-
-| Private method | `USE_DP` | `SELECTIVE_DP` |
-|---|---:|---:|
-| Full DP-SGD | `1` | `0` |
-| Feature DP / Selective DP | `1` | `1` |
-
-The private script automatically names outputs based on this flag:
-
-```bash
-if [[ "${SELECTIVE_DP}" == "1" ]]; then
-    export OUT_DIR="outputs_smolvlm_featdp_eps_${TARGET_EPS}_clip_${CLIP_NORM}_lr_${LR}_seed_${SEED}_${STAMP}"
-else
-    export OUT_DIR="outputs_smolvlm_fulldp_eps_${TARGET_EPS}_clip_${CLIP_NORM}_lr_${LR}_seed_${SEED}_${STAMP}"
-fi
-```
-
-Important DP variables:
-
-```bash
-export TARGET_EPS=1.0
-export CLIP_NORM=1.0
-```
-
-Important training variables:
-
-```bash
-export BATCH=16
-export GRAD_ACCUM=64
-export LR=5e-4
-```
-
-Note: in the ImageNet DP training code, the effective per-device batch used by HuggingFace is computed as:
-
-```text
-PER_DEVICE_BATCH = BATCH * GRAD_ACCUM
-```
-
-Thus, for `BATCH=16` and `GRAD_ACCUM=64`, the per-device train batch becomes `1024`. Reduce these values if GPU memory is insufficient.
-
----
-
-# 5. MIMIC-CXR + MedGemma
-
-## 5.1 Dataset setup
-
-MIMIC-CXR and MIMIC-CXR-JPG require PhysioNet credentialed access. Before downloading, make sure you have:
-
-1. a PhysioNet account,
-2. completed the required credentialing/training,
-3. signed the relevant data use agreement.
-
-MIMIC-CXR reports:
-
-```text
-https://physionet.org/content/mimic-cxr/2.1.0/
-```
-
-MIMIC-CXR-JPG:
-
-```text
-https://physionet.org/content/mimic-cxr-jpg/2.1.0/
-```
-
-A typical local layout is:
-
-```bash
-/data/common/data/mimic-cxr/2.1.0/files/
-/data/common/data/mimic-cxr-jpg/2.1.0/files/
-/data/common/data/mimic-cxr-jpg/2.1.0/mimic-cxr-2.0.0-chexpert.csv.gz
-/data/common/data/mimic-cxr-jpg/2.1.0/mimic-cxr-2.0.0-split.csv.gz
-```
-
-## 5.2 MIMIC variables / arguments used by the scripts
-
-The MIMIC scripts currently pass dataset paths as **command-line arguments** inside the bash files rather than reading all of them from environment variables.
-
-Before running, edit these files:
-
-```bash
-examples/run_mimic_non_private.sh
-examples/run_mimic_private.sh
-```
-
-Replace the placeholder paths:
-
-```bash
---chexpert_csv /path/to/file/mimic-cxr-2.0.0-chexpert.csv
---split_csv /path/to/file/mimic-cxr-2.0.0-split.csv
---report_root /path/to/downloaded_mimic/mimic_cxr/physionet.org/files/mimic-cxr/2.1.0/files/
-```
-
-Recommended local variables while editing:
-
-```bash
-export MIMIC_JPG_ROOT=/data/common/data/mimic-cxr-jpg/2.1.0
-export MIMIC_REPORT_ROOT=/data/common/data/mimic-cxr/2.1.0/files
-export CHEXPERT_CSV=${MIMIC_JPG_ROOT}/mimic-cxr-2.0.0-chexpert.csv.gz
-export SPLIT_CSV=${MIMIC_JPG_ROOT}/mimic-cxr-2.0.0-split.csv.gz
-```
-
-Then use these paths in the script arguments:
-
-```bash
---chexpert_csv "${CHEXPERT_CSV}" \
---split_csv "${SPLIT_CSV}" \
---report_root "${MIMIC_REPORT_ROOT}" \
-```
-
-The scripts also pass:
-
-```bash
---top_level_buckets p10 p11 p12
-```
-
-This restricts training to the selected MIMIC top-level subject buckets. To run on different buckets, edit this list.
-
-## 5.3 Running MIMIC non-private experiments
-
-Run:
-
-```bash
-bash examples/run_mimic_non_private.sh
-```
-
-The non-private script uses:
-
-```bash
---no-use_dp
---include_img
---include_txt
-```
-
-To activate or deactivate modalities, edit the modality flags in the bash command:
-
-| Setting | Image flag | Text flag |
-|---|---|---|
-| Image + text | `--include_img` | `--include_txt` |
-| Image only | `--include_img` | `--no-include_txt` |
-| Text only | `--no-include_img` | `--include_txt` |
-
-If your local argparse version does not expose the `--no-...` form, remove the flag and set the corresponding default in `scripts/train_mimic.py`.
-
-## 5.4 Running MIMIC private experiments
-
-Run:
-
-```bash
-bash examples/run_mimic_private.sh
-```
-
-The private script uses:
-
-```bash
---use_dp
---selective_dp
---target_epsilon 4.0
---clip_norm 1.0
---public_clip_norm 50.0
-```
-
-To switch between private methods:
-
-| Private method | Required flags |
-|---|---|
-| Full DP-SGD | `--use_dp --no-selective_dp` or remove `--selective_dp` if the default is false |
-| Feature DP / Selective DP | `--use_dp --selective_dp` |
-
-For Feature DP, `public_clip_norm` controls clipping for the public-gradient component. A large value such as `50.0` makes the public gradient nearly unclipped.
-
-Important private hyperparameters:
-
-```bash
---target_epsilon 4.0
---clip_norm 1.0
---public_clip_norm 50.0
---per_device_train_batch_size 2
---gradient_accumulation_steps 2
---learning_rate 2e-3
-```
-
----
-
-# 6. ABIDE + linear model
-
-## 6.1 Dataset setup
-
-The ABIDE code uses the ABIDE PCP data and precomputed fMRI connectivity features. A typical local layout is:
-
-```bash
-/storage/common/datasets/ABIDE_PCP_full
-/storage/common/datasets/ABIDE_PCP_full/fc_features
-medmap/abide_dump/recommended_feature_lists.json
-```
-
-The bash scripts expose these paths as environment variables:
-
-```bash
-export ABIDE_DATA_DIR="${ABIDE_DATA_DIR:-/storage/common/datasets/ABIDE_PCP_full}"
-export ABIDE_FC_DIR="${ABIDE_FC_DIR:-/storage/common/datasets/ABIDE_PCP_full/fc_features}"
-export FEATURE_JSON="${FEATURE_JSON:-medmap/abide_dump/recommended_feature_lists.json}"
-export PHENOTYPIC_CSV="${PHENOTYPIC_CSV:-}"
-```
-
-Meaning:
-
-| Variable | Meaning |
-|---|---|
-| `ABIDE_DATA_DIR` | Root/cache directory for ABIDE PCP data. |
-| `ABIDE_FC_DIR` | Directory containing precomputed fMRI functional-connectivity features. |
-| `FEATURE_JSON` | JSON file defining recommended sensitive/phenotypic features. |
-| `PHENOTYPIC_CSV` | Optional explicit phenotypic CSV path. Leave empty to use the default loading path. |
-
-The ABIDE scripts use the `${VAR:-default}` pattern, so you can override paths directly from the command line:
-
-```bash
-ABIDE_DATA_DIR=/my/abide/root \
-ABIDE_FC_DIR=/my/abide/root/fc_features \
-FEATURE_JSON=medmap/abide_dump/recommended_feature_lists.json \
-bash examples/run_abide_non_private.sh
-```
-
-## 6.2 Running ABIDE non-private experiments
-
-Run:
-
-```bash
-bash examples/run_abide_non_private.sh
-```
-
-The script defines a helper:
-
-```bash
-run_nonprivate "MODE_NAME" INCLUDE_FMRI INCLUDE_SENSITIVE
-```
-
-The default script runs three settings:
-
-```bash
-run_nonprivate "fmri_only" 1 0
-run_nonprivate "sensitive_only" 0 1
-run_nonprivate "fmri_sensitive" 1 1
-```
-
-To activate or deactivate modalities, edit these calls:
-
-| Setting | `INCLUDE_FMRI` | `INCLUDE_SENSITIVE` |
-|---|---:|---:|
-| fMRI only | `1` | `0` |
-| Sensitive/phenotypic only | `0` | `1` |
-| fMRI + sensitive/phenotypic | `1` | `1` |
-
-Do not set both to `0`; the Python code raises an error if both modalities are disabled.
-
-Optional site feature:
-
-```bash
-export INCLUDE_SITE_ID_AS_FEATURE=0
-```
-
-Set it to `1` only if you intentionally want to include site ID as an input feature.
-
-## 6.3 Running ABIDE private experiments
-
-Run:
-
-```bash
-bash examples/run_abide_private.sh
-```
-
-In private mode, the Python code forces both ABIDE views to be active:
-
-```bash
-INCLUDE_FMRI=1
-INCLUDE_SENSITIVE=1
-```
-
-Therefore, modality ablations should be done using the **non-private** ABIDE script.
-
-The private script defines:
-
-```bash
-run_private "MODE_NAME" SELECTIVE_DP_VALUE
-```
-
-Use:
-
-| Private method | Command |
-|---|---|
-| Full DP-SGD | `run_private "fulldp_fmri_sensitive" 0` |
-| Feature DP / Selective DP | `run_private "featuredp_fmri_sensitive" 1` |
-
-To run only Full DP-SGD, use:
-
-```bash
-run_private "fulldp_fmri_sensitive" 0
-# run_private "featuredp_fmri_sensitive" 1
-```
-
-To run only Feature DP, use:
-
-```bash
-# run_private "fulldp_fmri_sensitive" 0
-run_private "featuredp_fmri_sensitive" 1
-```
-
-To run both, uncomment both lines.
-
-Important private variables:
-
-```bash
-export TARGET_EPS="${TARGET_EPS:-8.0}"
-export CLIP_NORM="${CLIP_NORM:-1.0}"
-export PUBLIC_CLIP="${PUBLIC_CLIP:-50.0}"
-```
-
-As in the ImageNet DP script, the ABIDE DP code multiplies:
-
-```text
-PER_DEVICE_BATCH = BATCH * GRAD_ACCUM
-```
-
-With the default ABIDE private settings, `BATCH=64` and `GRAD_ACCUM=1`, so the per-device batch remains `64`.
-
----
-
-# 7. Privacy modes summary
-
-MedMAP supports three broad training regimes:
-
-| Regime | Description | Typical switch |
-|---|---|---|
-| Non-private | Standard training without DP noise. | `USE_DP=0` or `--no-use_dp` |
-| Full DP-SGD | Clips/noises the full example-level gradient. | `USE_DP=1`, `SELECTIVE_DP=0` |
-| Feature DP / Selective DP | Applies DP protection selectively to the private/sensitive modality component. | `USE_DP=1`, `SELECTIVE_DP=1` |
-
-For ImageNet and ABIDE, the private bash scripts use environment variables. For MIMIC, the private bash script uses command-line flags.
-
----
-
-# 8. Modality-control summary
-
-## ImageNet
-
-Use in `examples/run_imagenet_non_private.sh`:
-
-```bash
-export INCLUDE_IMG=1
-export INCLUDE_TEXT=1
-```
-
-| Experiment | Setting |
-|---|---|
-| Image + text | `INCLUDE_IMG=1`, `INCLUDE_TEXT=1` |
-| Image only | `INCLUDE_IMG=1`, `INCLUDE_TEXT=0` |
-| Text only | `INCLUDE_IMG=0`, `INCLUDE_TEXT=1` |
-
-In private ImageNet runs, both modalities are forced on.
-
-## MIMIC-CXR
-
-Use in `examples/run_mimic_non_private.sh` or `examples/run_mimic_private.sh`:
-
-```bash
---include_img
---include_txt
-```
-
-| Experiment | Setting |
-|---|---|
-| Image + text | `--include_img --include_txt` |
-| Image only | `--include_img --no-include_txt` |
-| Text only | `--no-include_img --include_txt` |
-
-## ABIDE
-
-Use in `examples/run_abide_non_private.sh`:
-
-```bash
-run_nonprivate "fmri_only" 1 0
-run_nonprivate "sensitive_only" 0 1
-run_nonprivate "fmri_sensitive" 1 1
-```
-
-In private ABIDE runs, both fMRI and sensitive/phenotypic features are forced on.
-
----
-
-# 9. Output directories
-
-The scripts write outputs to timestamped directories, for example:
-
-```bash
-outputs_smolvlm_cls_img_txt_<timestamp>
-outputs_smolvlm_featdp_eps_<eps>_clip_<clip>_lr_<lr>_seed_<seed>_<timestamp>
-outputs_abide_linear_nonprivate/<mode>_seed_<seed>_<timestamp>
-outputs_abide_linear_private/<mode>_eps_<eps>_clip_<clip>_lr_<lr>_seed_<seed>_<timestamp>
-output_mimic_non_private
-output_mimic_private
-```
-
-Each run may include model checkpoints, metrics, trainer state, and W&B logs depending on the training script and configuration.
-
----
-
-# 10. Troubleshooting
-
-## `Error: Could not locate MedMAP repository root.`
-
-Run the bash scripts from anywhere, but keep them inside `examples/`. Each script expects the repository root to contain:
-
-```bash
-medmap/
-scripts/<training_script>.py
-```
-
-## `ModuleNotFoundError: No module named medmap`
-
-Install the package in editable mode from the repository root:
-
-```bash
-pip install -e .
-```
-
-## CUDA out-of-memory
-
-Reduce one or more of:
-
-```bash
-BATCH
-GRAD_ACCUM
-MAX_LENGTH
-```
-
-For ImageNet and ABIDE private runs, remember that the code multiplies `BATCH * GRAD_ACCUM` before passing it to `per_device_train_batch_size`.
-
-## Gradient checkpointing in ImageNet
-
-The ImageNet scripts currently keep:
-
-```bash
-export GRAD_CHECKPOINT=0
-```
-
-Keep this disabled unless the gradient-checkpointing block in `scripts/train_imagenet.py` is moved after model construction.
-
----
-
-# 11. Notes on data access and redistribution
-
-ImageNet must be downloaded through Kaggle according to Kaggle's terms.
-
-MIMIC-CXR and MIMIC-CXR-JPG must be downloaded through PhysioNet after credentialed access approval. Do not redistribute MIMIC data, reports, labels, or images.
-
-ABIDE can be cached locally through the code or preprocessed into the expected feature directories. Do not commit raw or processed large data files to the repository.
-
----
-
-# 12. Citation
-
-If you use this software package, please cite the corresponding paper:
+Weights & Biases logging is on by default for the deep-learning arms and
+fully optional — `--wandb_mode disabled` / `WANDB_MODE=disabled` turns it
+off. Setup instructions: [docs/wandb.md](docs/wandb.md).
+
+## Where to go next: experiment guide
+
+Every experiment follows the same workflow: **download → preprocess once →
+run the arm(s) you need → aggregate**. The table below routes you to the
+right command and doc section for each step.
+
+### MIMIC-CXR (MedGemma) — [docs/mimic_cxr.md](docs/mimic_cxr.md)
+
+| To do this... | Go here |
+| --- | --- |
+| Download images + reports (PhysioNet, credentialed) | [docs/mimic_cxr.md §1](docs/mimic_cxr.md) |
+| Select one image per study | `python -m scripts.select_mimic_images p10 p11 p12 --dataset-root ... --output-root ...` |
+| Generate leakage-filtered `_mmp` reports | `python -m scripts.extract_mimic_reports --shard p10 p11 p12 --reports-root ...` |
+| Non-private training (both / image-only / text-only) | `examples/run_mimic_non_private.sh`; choose modalities with `--include_img` / `--include_txt` |
+| Full DP-SGD | `examples/run_mimic_private.sh` with `--no-feature_dp` |
+| Feature-DP | `examples/run_mimic_private.sh` (default: `--feature_dp`); sweep with `TARGET_EPSILON=... SEED=...` |
+| Results | `output_mimic_*/outputs_mimic_cxr_medgemma_*/` (metrics JSON, prediction dumps, checkpoints) + W&B |
+
+### ABIDE I (logistic regression) — [docs/abide.md](docs/abide.md)
+
+| To do this... | Go here |
+| --- | --- |
+| Download (nilearn, open access) | [docs/abide.md §1](docs/abide.md) |
+| Extract FC features (once, ~hours) | `python -m scripts.extract_abide_features --data-dir $ABIDE_DATA_DIR` |
+| Non-private baseline + create the fixed split (run this first) | `python -m scripts.train_abide_classic --split {iid,non_iid} --method lbfgs --data-dir ...` |
+| Full DP-GD at a given ε | `python -m scripts.train_abide_classic --split ... --method full_dp --epsilon 8 --data-dir ...` |
+| Feature-DP at a given ε | `python -m scripts.train_abide_classic --split ... --method feat_dp --epsilon 8 --data-dir ...` |
+| Whole benchmark in one go (baseline → ε sweep → summaries) | `examples/run_abide_classic.sh` |
+| Summary tables, privacy-utility plots, subgroup/LaTeX tables | `python -m scripts.summarize_abide --data-dir ... --split ... --stages all` |
+| Same task on the HF/torch stack (swappable-model template) | `examples/run_abide_hf_non_private.sh` / `examples/run_abide_hf_private.sh` (`FEATURE_DP=1` for Feature-DP) |
+| Results | `<data-dir>/outputs/{iid,non_iid}_fixed_split/...` (per-seed dirs, accounting JSONs, summary CSVs, plots) |
+
+### PAD-UFES-20 (EfficientNet + MLP) — [docs/pad_ufes.md](docs/pad_ufes.md)
+
+| To do this... | Go here |
+| --- | --- |
+| Download (automatic on first run) | add `--download` to any command below |
+| Non-private, image-only / image+metadata | `python -m scripts.train_pad --mode sgd --lr 1e-3 --data_root ...` (add `--use_metadata`) |
+| Full DP-SGD | `python -m scripts.train_pad --mode dpsgd --lr 1e-3 --epsilon 8 --data_root ...` |
+| Feature-DP | `python -m scripts.train_pad --mode feature_dpsgd --lr 1e-3 --epsilon 8 --data_root ...` |
+| Full grid (both baselines + ε sweep) | `examples/run_pad.sh` |
+| Results | stdout `RESULT ...` lines + per-subgroup accuracies appended to `subgroup_results.csv` |
+
+### Tiny ImageNet (SmolVLM) — [docs/imagenet.md](docs/imagenet.md)
+
+| To do this... | Go here |
+| --- | --- |
+| Download (Kaggle ILSVRC + ImageNet-Captions + tiny-imagenet wnids) | [docs/imagenet.md §1](docs/imagenet.md) |
+| Non-private (modalities via `INCLUDE_IMG` / `INCLUDE_TEXT`) | `examples/run_imagenet_non_private.sh` |
+| Full DP-SGD | `FEATURE_DP=0 examples/run_imagenet_private.sh` |
+| Feature-DP | `FEATURE_DP=1 examples/run_imagenet_private.sh` |
+| Results | `outputs_smolvlm_*/` + W&B |
+
+Common conventions across all datasets: `--use_dp` / `USE_DP=1` switches
+privacy on and `feature_dp` selects Feature-DP vs. full DP-SGD; ε sweeps are
+one target per invocation; seeds are explicit everywhere; preprocessing
+results are cached so sweeps only pay the training cost. Note that reported
+ε values cover the final training run (hyperparameter selection is not
+composed into the budget).
+
+## Extending MedMAP
+
+- **New model on an existing dataset:** implement the forward contract
+  (`labels=`, plus `public=` / `feature_dp=` kwargs returning the
+  decomposed loss) and pass it to `medmap.training.trainers.get_trainer`;
+  the collators and DP trainer are model-agnostic. `medmap/models/abide_linear.py`
+  is the smallest complete example.
+- **New dataset:** add a builder under `medmap/datasets/`, a collator if the
+  modalities need special batching, and an entry script; the trainer stack
+  and accounting are reusable as-is.
+
+## Vendored dp-transformers (modified)
+
+`library/dp-transformers/` is a modified copy of
+[microsoft/dp-transformers](https://github.com/microsoft/dp-transformers)
+(MIT) implementing the Feature-DP training step (public/private per-sample
+gradient decomposition, separate clipping, private-only noise, manual
+microbatching, dp-accounting-based calibration; the mechanism is exposed as
+`feature_dp` throughout). The complete change log is
+in [library/dp-transformers/MODIFICATIONS.md](library/dp-transformers/MODIFICATIONS.md);
+all upstream licenses are retained (see
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)).
+
+## Licenses
+
+- **Code:** MIT ([LICENSE](LICENSE)).
+- **Third-party components** (modified dp-transformers, vendored HF Trainer
+  code, official CheXpert/NegBio/mimic-code resources): see
+  [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+- **Data:** each dataset keeps its own license/DUA — PhysioNet Credentialed
+  Health Data License 1.5.0 (MIMIC), CC BY-NC-SA (ABIDE), CC BY 4.0
+  (PAD-UFES-20), ImageNet terms of access (Tiny ImageNet). Details and
+  required citations are on each dataset page under `docs/`.
+
+## Citation
+
+If you use MedMAP, please cite (reference anonymized for double-blind
+review; the final citation will appear here upon publication):
 
 ```bibtex
-@inproceedings{medmap2026,
-  title     = {MedMAP: Benchmarking Differentially Private Multimodal Learning},
-  author    = {Anonymous Authors},
-  booktitle = {Preprint},
-  year      = {2026}
+@misc{medmap2026,
+  title  = {MedMAP: A Benchmark for Multimodal Medical Machine Learning under Differential Privacy},
+  author = {Anonymous Authors},
+  year   = {2026},
+  note   = {Under review}
 }
 ```
 
-Please also cite the original datasets and model checkpoints used in each experiment.
-
----
+Please additionally cite the datasets and tools you use — the exact BibTeX
+entries are listed on each dataset page (`docs/*.md`) and in
+`THIRD_PARTY_NOTICES.md`.
 
 ## Acknowledgements
 
-This repository builds upon several excellent open-source datasets, models, and libraries.
-
-We would like to acknowledge:
-
-- The creators and maintainers of the ABIDE and MIMIC-CXR datasets.
-- The developers of SmolVLM, MedGemma, HuggingFace Transformers, PyTorch, scikit-learn, and Opacus.
-- Microsoft Research for the DP-Transformers project, which provided useful references and implementation insights for differentially private training with Transformer-based models.
-
-### DP-Transformers
-
-If you use or build upon this repository, please also consider citing and acknowledging DP-Transformers:
-
-- DP-Transformers Project Page:  
-  https://www.microsoft.com/en-us/research/project/dp-transformers
-
-- GitHub Repository:  
-  https://github.com/microsoft/dp-transformers
-
-### Licenses and Usage
-
-All datasets, pretrained models, and third-party libraries remain under their respective licenses and terms of use. Users are responsible for ensuring compliance with dataset access agreements and model licenses before usage.
-
-In particular:
-
-- MIMIC-CXR requires credentialed PhysioNet access and compliance with the associated Data Use Agreement (DUA).
-- ABIDE usage must follow the dataset’s official terms and conditions.
-- SmolVLM, MedGemma, and associated libraries must be used according to their respective model and software licenses.
-
----
+Built on [dp-transformers](https://github.com/microsoft/dp-transformers)
+(Microsoft), [Opacus](https://opacus.ai/), Google
+[dp-accounting](https://github.com/google/differential-privacy),
+Hugging Face Transformers/Datasets/PEFT, scikit-learn, nilearn, and Numba.
+Leakage filtering vendors pinned resources from the
+[MIT-LCP mimic-code](https://github.com/MIT-LCP/mimic-code) repository, the
+[CheXpert labeler](https://github.com/stanfordmlgroup/chexpert-labeler), and
+[NegBio](https://github.com/ncbi-nlp/NegBio).

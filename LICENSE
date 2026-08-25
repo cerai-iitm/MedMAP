@@ -1,6 +1,6 @@
 MIT License
 
-Copyright (c) 2026 Kaushik Ningappa Doddamani
+Copyright (c) 2026 The MedMAP Authors
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -19,3 +19,16 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+--------------------------------------------------------------------------
+NOTE ON THIRD-PARTY COMPONENTS
+
+This repository redistributes a modified copy of Microsoft's dp-transformers
+library (MIT License) under library/dp-transformers/, which itself contains
+code derived from Hugging Face Transformers (Apache License 2.0), and vendors
+pinned resources from the MIT-LCP mimic-code repository, the Stanford CheXpert
+labeler, and NCBI NegBio under medmap/datasets/mimic_cxr/vendor/. See
+THIRD_PARTY_NOTICES.md for the complete list of third-party licenses and
+attribution requirements. Dataset access is governed by the respective data
+use agreements (see docs/ per-dataset pages); no dataset content is
+redistributed with this repository.

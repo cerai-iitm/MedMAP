@@ -23,16 +23,16 @@ class MedGemmaForMultiLabelClassification(nn.Module):
         - loss = masked BCE over all finite labels
 
     loss_mode="decomposed":
-        Matches Code 2, private / selective-DP training:
+        Matches Code 2, private / Feature-DP training:
         - logits_text = classifier(fused pooled representation)
         - logits_img  = classifier(image-only representation)
         - public=True:
               loss = image_loss
               logits = logits_img
-        - public=False, selective_dp=True:
+        - public=False, feature_dp=True:
               loss = text_loss - image_loss
               logits = logits_text
-        - public=False, selective_dp=False:
+        - public=False, feature_dp=False:
               loss = text_loss
               logits = logits_text
     """
@@ -94,9 +94,9 @@ class MedGemmaForMultiLabelClassification(nn.Module):
         public: Optional[bool] = False,
 
         # IMPORTANT:
-        # Code 2 had selective_dp=True by default.
+        # Code 2 had feature_dp=True by default.
         # So we keep True here for exact Code 2 behavior when loss_mode="decomposed".
-        selective_dp: Optional[bool] = True,
+        feature_dp: Optional[bool] = True,
 
         # "standard"   -> Code 1 behavior
         # "decomposed" -> Code 2 behavior
@@ -241,7 +241,7 @@ class MedGemmaForMultiLabelClassification(nn.Module):
                 if public:
                     w_text, w_image = 0.0, 1.0
                 else:
-                    if selective_dp:
+                    if feature_dp:
                         w_text, w_image = 1.0, -1.0
                     else:
                         w_text, w_image = 1.0, 0.0

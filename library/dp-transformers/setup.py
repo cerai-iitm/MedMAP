@@ -4,7 +4,8 @@
 import os
 from setuptools import setup, find_packages
 
-version = '1.0.1'
+# MedMAP fork: version suffix distinguishes this modified copy from upstream.
+version = '1.0.1+medmap'
 
 with open('README.md') as f:
     long_description = f.read()
@@ -31,7 +32,10 @@ setup(
         "datasets>=2.0.0",
         "opacus>=1.3.0",
         "peft",
-        "prv_accountant<0.2.0",
+        # MedMAP fork: privacy accounting now uses Google dp-accounting
+        # (see arguments.find_noise_multiplier) instead of prv_accountant.
+        "dp-accounting>=0.4",
+        "scipy",
         "torch>=1.13.1",
     ],
     test_suite="tests",

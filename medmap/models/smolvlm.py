@@ -26,11 +26,11 @@ class SmolVLMForImageTextClassification(SmolVLMPreTrainedModel):
         - loss = CE(logits, labels) over all rows
 
     loss_mode="decomposed":
-        Behaves like the selective-DP/public-private classifier:
+        Behaves like the Feature-DP/public-private classifier:
         - computes logits_text from fused embedding
         - computes logits_image from image-only embedding
         - public=True        -> image_loss
-        - selective_dp=True  -> text_loss - image_loss
+        - feature_dp=True  -> text_loss - image_loss
         - otherwise          -> text_loss
     """
 
@@ -61,11 +61,11 @@ class SmolVLMForImageTextClassification(SmolVLMPreTrainedModel):
 
         # DP / public-private controls
         public: Optional[bool] = False,
-        selective_dp: Optional[bool] = False,
+        feature_dp: Optional[bool] = False,
 
         # IMPORTANT:
         # "standard"   -> attached normal fused classifier behavior
-        # "decomposed" -> selective-DP/public-private behavior
+        # "decomposed" -> Feature-DP/public-private behavior
         loss_mode: str = "standard",
 
         use_cache: Optional[bool] = False,
@@ -212,7 +212,7 @@ class SmolVLMForImageTextClassification(SmolVLMPreTrainedModel):
             # Exactly the normal fused-classifier behavior.
             logits = logits_text
         else:
-            # Selective-DP/public-private behavior.
+            # Feature-DP/public-private behavior.
             logits = logits_image if public else logits_text
 
         # ---------------------------------------------------------
@@ -228,7 +228,7 @@ class SmolVLMForImageTextClassification(SmolVLMPreTrainedModel):
                 loss = F.cross_entropy(logits.float(), labels.view(-1))
 
             else:
-                # Matches your selective-DP/public-private version:
+                # Matches your Feature-DP/public-private version:
                 # modality-specific losses.
                 if has_image.any():
                     image_loss = F.cross_entropy(
@@ -251,7 +251,7 @@ class SmolVLMForImageTextClassification(SmolVLMPreTrainedModel):
                 if public:
                     w_text, w_image = 0.0, 1.0
                 else:
-                    if selective_dp:
+                    if feature_dp:
                         w_text, w_image = 1.0, -1.0
                     else:
                         w_text, w_image = 1.0, 0.0

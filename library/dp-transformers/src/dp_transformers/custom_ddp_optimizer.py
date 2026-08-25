@@ -37,7 +37,7 @@ class DistributedDPOptimizer(DPOptimizer):
         expected_batch_size: Optional[int],
         generator=None,
         secure_mode: bool = False,
-        selective_dp: bool = False,
+        feature_dp: bool = False,
         **kwargs,
     ):
         super().__init__(
@@ -47,7 +47,7 @@ class DistributedDPOptimizer(DPOptimizer):
             expected_batch_size=expected_batch_size,
             generator=generator,
             secure_mode=secure_mode,
-            selective_dp=selective_dp,
+            feature_dp=feature_dp,
             **kwargs,
         )
         self.rank = torch.distributed.get_rank()

@@ -206,7 +206,7 @@ class DPOptimizer(Optimizer):
         expected_batch_size: Optional[int],
         generator=None,
         secure_mode: bool = False,
-        selective_dp: bool = False,
+        feature_dp: bool = False,
         gradient_accumulation_steps: int = 1,
         **kwargs,
     ):
@@ -236,7 +236,7 @@ class DPOptimizer(Optimizer):
         self.secure_mode = secure_mode
         self._step_skip_queue = []
         self._is_last_step_skipped = False
-        self.selective_dp = selective_dp
+        self.feature_dp = feature_dp
         self.gradient_accumulation_steps = gradient_accumulation_steps
 
         for p in self.params:

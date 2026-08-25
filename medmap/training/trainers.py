@@ -25,7 +25,7 @@ class AccLoggingMixin:
         return_outputs=False,
         num_items_in_batch=None,
         public=False,
-        selective_dp=False,
+        feature_dp=False,
         **kwargs,
     ):
         labels_for_acc = inputs.get("labels", None)
@@ -40,7 +40,7 @@ class AccLoggingMixin:
 
         forward_kwargs = dict(
             public=public,
-            selective_dp=selective_dp,
+            feature_dp=feature_dp,
             loss_mode=self.loss_mode,
             **kwargs,
         )
