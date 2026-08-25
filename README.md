@@ -190,6 +190,17 @@ in [library/dp-transformers/MODIFICATIONS.md](library/dp-transformers/MODIFICATI
 all upstream licenses are retained (see
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)).
 
+## Acknowledgements
+
+Built on [dp-transformers](https://github.com/microsoft/dp-transformers)
+(Microsoft), [Opacus](https://opacus.ai/), Google
+[dp-accounting](https://github.com/google/differential-privacy),
+Hugging Face Transformers/Datasets/PEFT, scikit-learn, nilearn, and Numba.
+Leakage filtering vendors pinned resources from the
+[MIT-LCP mimic-code](https://github.com/MIT-LCP/mimic-code) repository, the
+[CheXpert labeler](https://github.com/stanfordmlgroup/chexpert-labeler), and
+[NegBio](https://github.com/ncbi-nlp/NegBio).
+
 ## Licenses
 
 - **Code:** MIT ([LICENSE](LICENSE)).
@@ -218,14 +229,3 @@ review; the final citation will appear here upon publication):
 Please additionally cite the datasets and tools you use — the exact BibTeX
 entries are listed on each dataset page (`docs/*.md`) and in
 `THIRD_PARTY_NOTICES.md`.
-
-## Acknowledgements
-
-Built on [dp-transformers](https://github.com/microsoft/dp-transformers)
-(Microsoft), [Opacus](https://opacus.ai/), Google
-[dp-accounting](https://github.com/google/differential-privacy),
-Hugging Face Transformers/Datasets/PEFT, scikit-learn, nilearn, and Numba.
-Leakage filtering vendors pinned resources from the
-[MIT-LCP mimic-code](https://github.com/MIT-LCP/mimic-code) repository, the
-[CheXpert labeler](https://github.com/stanfordmlgroup/chexpert-labeler), and
-[NegBio](https://github.com/ncbi-nlp/NegBio).

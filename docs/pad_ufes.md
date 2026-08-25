@@ -7,7 +7,7 @@ smoking/drinking, Fitzpatrick skin type, cancer history, lesion diameters).
 
 Contents: [Download](#1-download) · [Preprocessing](#2-preprocessing) ·
 [Training](#3-training) · [Reproducibility notes](#4-reproducibility-notes) ·
-[License & citations](#5-license--citations) · [Parameter reference](#6-parameter-reference)
+[Parameter reference](#5-parameter-reference) · [License & citations](#6-license--citations)
 
 ---
 
@@ -101,29 +101,7 @@ history) to `--subgroup_csv` (default `subgroup_results.csv`).
 - Feature extraction is deterministic (frozen backbone, eval mode), so the
   cache is reproducible from a fresh download.
 
-## 5. License & citations
-
-**Data license:** Creative Commons **CC BY 4.0** (attribution).
-**Backbone weights:** torchvision EfficientNet-B3, ImageNet-1k weights
-(BSD-3-Clause torchvision; ImageNet terms apply to the pretraining data).
-
-```bibtex
-@article{pacheco2020padufes,
-  title   = {PAD-UFES-20: A skin lesion dataset composed of patient data and clinical images collected from smartphones},
-  author  = {Pacheco, Andre G C and Lima, Gustavo R and Salomao, Amanda S and Krohling, Breno and Biral, Igor P and de Angelo, Gabriel G and Alves Jr, F{\'a}bio C R and Esgario, Jos{\'e} G M and Simora, Alana C and Castro, Pedro B C and others},
-  journal = {Data in Brief}, volume = {32}, pages = {106221}, year = {2020}
-}
-
-@inproceedings{tan2019efficientnet,
-  title     = {EfficientNet: Rethinking model scaling for convolutional neural networks},
-  author    = {Tan, Mingxing and Le, Quoc},
-  booktitle = {International Conference on Machine Learning (ICML)}, pages = {6105--6114}, year = {2019}
-}
-```
-
----
-
-## 6. Parameter reference
+## 5. Parameter reference
 
 ### `scripts/train_pad.py`
 
@@ -160,3 +138,25 @@ history) to `--subgroup_csv` (default `subgroup_results.csv`).
 | `--subgroup_csv` | `subgroup_results.csv` | Long-format CSV that per-subgroup test accuracies are appended to. |
 | `--setting_tag` | `<mode>_eps<ε>` | Label stored with the subgroup rows to identify the run. |
 | `--gpu` | — | Sets `CUDA_VISIBLE_DEVICES` before torch loads. |
+
+---
+
+## 6. License & citations
+
+**Data license:** Creative Commons **CC BY 4.0** (attribution).
+**Backbone weights:** torchvision EfficientNet-B3, ImageNet-1k weights
+(BSD-3-Clause torchvision; ImageNet terms apply to the pretraining data).
+
+```bibtex
+@article{pacheco2020padufes,
+  title   = {PAD-UFES-20: A skin lesion dataset composed of patient data and clinical images collected from smartphones},
+  author  = {Pacheco, Andre G C and Lima, Gustavo R and Salomao, Amanda S and Krohling, Breno and Biral, Igor P and de Angelo, Gabriel G and Alves Jr, F{\'a}bio C R and Esgario, Jos{\'e} G M and Simora, Alana C and Castro, Pedro B C and others},
+  journal = {Data in Brief}, volume = {32}, pages = {106221}, year = {2020}
+}
+
+@inproceedings{tan2019efficientnet,
+  title     = {EfficientNet: Rethinking model scaling for convolutional neural networks},
+  author    = {Tan, Mingxing and Le, Quoc},
+  booktitle = {International Conference on Machine Learning (ICML)}, pages = {6105--6114}, year = {2019}
+}
+```

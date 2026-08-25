@@ -13,7 +13,7 @@ Two interchangeable backends implement the same task:
 
 Contents: [Download](#1-download) · [Feature extraction](#2-feature-extraction) ·
 [Classic backend](#3-classic-backend) · [HF backend](#4-hf-backend) ·
-[Reproducibility notes](#5-reproducibility-notes) · [License & citations](#6-license--citations) · [Parameter reference](#7-parameter-reference)
+[Reproducibility notes](#5-reproducibility-notes) · [Parameter reference](#6-parameter-reference) · [License & citations](#7-license--citations)
 
 ---
 
@@ -157,44 +157,7 @@ Key variables: `SEED` (81), `EPOCHS` (100), `BATCH` (64), `LR` (1e-3),
 - Classic defaults per split: iterations 2000 (IID) / 3000 (non-IID),
   C 0.1 / 0.3, Feature-DP lr 0.08 / 0.16.
 
-## 6. License & citations
-
-**Data terms:** ABIDE I is shared for non-commercial research under a
-Creative Commons **BY-NC-SA** license (attribution, non-commercial,
-share-alike); users must not attempt to re-identify participants. See the
-[ABIDE usage notes](https://fcon_1000.projects.nitrc.org/indi/abide/).
-
-```bibtex
-@article{dimartino2014abide,
-  title   = {The autism brain imaging data exchange: towards a large-scale evaluation of the intrinsic brain architecture in autism},
-  author  = {Di Martino, Adriana and Yan, Chao-Gan and Li, Qingyang and Denio, Erin and Castellanos, Francisco X and Alaerts, Kaat and Anderson, Jeffrey S and Assaf, Michal and Bookheimer, Susan Y and Dapretto, Mirella and others},
-  journal = {Molecular Psychiatry}, volume = {19}, number = {6}, pages = {659--667}, year = {2014}
-}
-
-@article{craddock2013pcp,
-  title   = {The Neuro Bureau Preprocessing Initiative: open sharing of preprocessed neuroimaging data and derivatives},
-  author  = {Craddock, Cameron and Benhajali, Yassine and Chu, Carlton and Chouinard, Francois and Evans, Alan and Jakab, Andr{\'a}s and Khundrakpam, Budhachandra Singh and Lewis, John David and Li, Qingyang and Milham, Michael and others},
-  journal = {Frontiers in Neuroinformatics}, volume = {7}, year = {2013}
-}
-
-% MSDL atlas used for time-series extraction
-@inproceedings{varoquaux2011msdl,
-  title     = {Multi-subject dictionary learning to segment an atlas of brain spontaneous activity},
-  author    = {Varoquaux, Ga{\"e}l and Gramfort, Alexandre and Pedregosa, Fabian and Michel, Vincent and Thirion, Bertrand},
-  booktitle = {Information Processing in Medical Imaging (IPMI)}, pages = {562--573}, year = {2011}
-}
-
-% Tooling
-@article{abraham2014nilearn,
-  title   = {Machine learning for neuroimaging with scikit-learn},
-  author  = {Abraham, Alexandre and Pedregosa, Fabian and Eickenberg, Michael and Gervais, Philippe and Mueller, Andreas and Kossaifi, Jean and Gramfort, Alexandre and Thirion, Bertrand and Varoquaux, Ga{\"e}l},
-  journal = {Frontiers in Neuroinformatics}, volume = {8}, year = {2014}
-}
-```
-
----
-
-## 7. Parameter reference
+## 6. Parameter reference
 
 ### `scripts/extract_abide_features.py`
 
@@ -250,3 +213,40 @@ share-alike); users must not attempt to re-identify participants. See the
 | `EVAL_STRATEGY`, `EVAL_STEPS`, `SAVE_STRATEGY`, `SAVE_STEPS`, `LOGGING_STRATEGY`, `LOGGING_STEPS` | epoch / 500 / epoch / 500 / steps / 10 | Evaluation, checkpointing and logging cadence. |
 | `OUT_DIR` / `RUN_NAME` | auto-generated from the setting | Output directory and W&B run name. |
 | `WANDB_MODE` | online | `disabled` runs without W&B. |
+
+---
+
+## 7. License & citations
+
+**Data terms:** ABIDE I is shared for non-commercial research under a
+Creative Commons **BY-NC-SA** license (attribution, non-commercial,
+share-alike); users must not attempt to re-identify participants. See the
+[ABIDE usage notes](https://fcon_1000.projects.nitrc.org/indi/abide/).
+
+```bibtex
+@article{dimartino2014abide,
+  title   = {The autism brain imaging data exchange: towards a large-scale evaluation of the intrinsic brain architecture in autism},
+  author  = {Di Martino, Adriana and Yan, Chao-Gan and Li, Qingyang and Denio, Erin and Castellanos, Francisco X and Alaerts, Kaat and Anderson, Jeffrey S and Assaf, Michal and Bookheimer, Susan Y and Dapretto, Mirella and others},
+  journal = {Molecular Psychiatry}, volume = {19}, number = {6}, pages = {659--667}, year = {2014}
+}
+
+@article{craddock2013pcp,
+  title   = {The Neuro Bureau Preprocessing Initiative: open sharing of preprocessed neuroimaging data and derivatives},
+  author  = {Craddock, Cameron and Benhajali, Yassine and Chu, Carlton and Chouinard, Francois and Evans, Alan and Jakab, Andr{\'a}s and Khundrakpam, Budhachandra Singh and Lewis, John David and Li, Qingyang and Milham, Michael and others},
+  journal = {Frontiers in Neuroinformatics}, volume = {7}, year = {2013}
+}
+
+% MSDL atlas used for time-series extraction
+@inproceedings{varoquaux2011msdl,
+  title     = {Multi-subject dictionary learning to segment an atlas of brain spontaneous activity},
+  author    = {Varoquaux, Ga{\"e}l and Gramfort, Alexandre and Pedregosa, Fabian and Michel, Vincent and Thirion, Bertrand},
+  booktitle = {Information Processing in Medical Imaging (IPMI)}, pages = {562--573}, year = {2011}
+}
+
+% Tooling
+@article{abraham2014nilearn,
+  title   = {Machine learning for neuroimaging with scikit-learn},
+  author  = {Abraham, Alexandre and Pedregosa, Fabian and Eickenberg, Michael and Gervais, Philippe and Mueller, Andreas and Kossaifi, Jean and Gramfort, Alexandre and Thirion, Bertrand and Varoquaux, Ga{\"e}l},
+  journal = {Frontiers in Neuroinformatics}, volume = {8}, year = {2014}
+}
+```
