@@ -7,7 +7,7 @@ smoking/drinking, Fitzpatrick skin type, cancer history, lesion diameters).
 
 Contents: [Download](#1-download) · [Preprocessing](#2-preprocessing) ·
 [Training](#3-training) · [Reproducibility notes](#4-reproducibility-notes) ·
-[License & citations](#5-license--citations)
+[License & citations](#5-license--citations) · [Parameter reference](#6-parameter-reference)
 
 ---
 
@@ -120,3 +120,43 @@ history) to `--subgroup_csv` (default `subgroup_results.csv`).
   booktitle = {International Conference on Machine Learning (ICML)}, pages = {6105--6114}, year = {2019}
 }
 ```
+
+---
+
+## 6. Parameter reference
+
+### `scripts/train_pad.py`
+
+**Mode & privacy:**
+
+| Parameter | Default | Purpose |
+| --- | --- | --- |
+| `--mode` | required | `sgd` (non-private Adam), `dpsgd` (DP-SGD on the full gradient), `feature_dpsgd` (Feature DP-SGD: image vs. metadata components clipped separately). |
+| `--epsilon` | — | Target privacy budget ε; required for the two DP modes, ignored for `sgd`. |
+| `--delta` | `1/N_train^1.1` | Target δ for the accountant. |
+| `--max_grad_norm` | 1.0 | Clip norm C for `dpsgd`. |
+| `--C_base` | 50.0 | Image-component clip norm for `feature_dpsgd` (large = nearly unclipped). |
+| `--C_meta` | 1.0 | Metadata-component clip norm for `feature_dpsgd`; the noise scale is `sigma * C_meta`, so only the metadata pays the privacy cost. |
+| `--use_metadata` | off | Include the real one-hot metadata block (`sgd` only; the DP modes force it on — their gradient decomposition needs real metadata). Without it the metadata block is zeros of the same width. |
+
+**Data & caching:**
+
+| Parameter | Default | Purpose |
+| --- | --- | --- |
+| `--data_root` | required | PAD-UFES-20 root (`metadata.csv` + `all_images/`). |
+| `--download` | off | Download + extract the official Mendeley archive if images are missing. |
+| `--img_dir` / `--meta_path` | `<data_root>/all_images` / `<data_root>/metadata.csv` | Explicit overrides. |
+| `--cache_path` | `<data_root>/features_cache_patient_ohe.npz` | EfficientNet feature cache, shared across all runs/seeds. |
+
+**Training & reporting:**
+
+| Parameter | Default | Purpose |
+| --- | --- | --- |
+| `--lr` | required | Adam learning rate. |
+| `--epochs` | 100 | Full-batch training steps (also the accountant's composition length). |
+| `--hidden_dim` | 512 | MLP hidden width. |
+| `--seed` | 0 | Run seed: model init, shuffling, DP noise — but NOT the split. |
+| `--split_seed` | 101 | Fixes the patient-level 80/10/10 split independently of `--seed`, so every run in a sweep sees the identical split. |
+| `--subgroup_csv` | `subgroup_results.csv` | Long-format CSV that per-subgroup test accuracies are appended to. |
+| `--setting_tag` | `<mode>_eps<ε>` | Label stored with the subgroup rows to identify the run. |
+| `--gpu` | — | Sets `CUDA_VISIBLE_DEVICES` before torch loads. |

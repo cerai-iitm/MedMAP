@@ -13,7 +13,7 @@ Two interchangeable backends implement the same task:
 
 Contents: [Download](#1-download) · [Feature extraction](#2-feature-extraction) ·
 [Classic backend](#3-classic-backend) · [HF backend](#4-hf-backend) ·
-[Reproducibility notes](#5-reproducibility-notes) · [License & citations](#6-license--citations)
+[Reproducibility notes](#5-reproducibility-notes) · [License & citations](#6-license--citations) · [Parameter reference](#7-parameter-reference)
 
 ---
 
@@ -191,3 +191,62 @@ share-alike); users must not attempt to re-identify participants. See the
   journal = {Frontiers in Neuroinformatics}, volume = {8}, year = {2014}
 }
 ```
+
+---
+
+## 7. Parameter reference
+
+### `scripts/extract_abide_features.py`
+
+| Parameter | Default | Purpose |
+| --- | --- | --- |
+| `--data-dir` | required | ABIDE PCP root; raw data is downloaded here if missing. |
+| `--out-dir` | `<data-dir>/fc_features` | Where `X_conn.npy` / `y.npy` / `meta.json` are written. |
+| `--t-r` | 2.0 | Repetition time passed to the masker. |
+
+### `scripts/train_abide_classic.py` (classic backend)
+
+| Parameter | Default | Purpose |
+| --- | --- | --- |
+| `--split` | required | `iid` (stratified random 70/10/20) or `non_iid` (SITE_ID-disjoint: test sites unseen in training). |
+| `--method` | required | `lbfgs` (non-private baseline; also creates the fixed split and tunes C — run first), `full_dp` (full-batch DP gradient descent), `feat_dp` (Feature-DP). |
+| `--data-dir` | required | ABIDE PCP root (contains `ABIDE_pcp/` and `fc_features/`). |
+| `--output-root` | `<data-dir>/outputs` | Root of the results tree. |
+| `--fc-dir` | `<data-dir>/fc_features` | Location of the precomputed FC features. |
+| `--phenotypic-csv` | `<data-dir>/ABIDE_pcp/Phenotypic_V1_0b_preprocessed1.csv` | Phenotypic records. |
+| `--feature-json` | data dir, then packaged copy | `recommended_feature_lists.json` defining the 11 sensitive phenotype columns. |
+| `--epsilon` | 64 iid / 1 non_iid (script defaults) | Target ε for `full_dp` / `feat_dp`; run one ε per invocation to sweep. |
+| `--iterations` | 2000 iid / 3000 non_iid | Full-batch gradient-descent steps (also the accountant's composition length). |
+| `--seeds` | 81–90 iid / 21–30 non_iid | Comma-separated final-run seeds (only the DP noise varies across them; the split is fixed). |
+| `--tuning-seed` | 81 iid / 21 non_iid | Seed used to create the fixed split and tune hyperparameters once. |
+| `--lr-grid` | method defaults | Learning-rate grid searched on the tuning seed (full_dp auto-expands at grid endpoints). |
+| `--clip-grid` | 0.6455 iid / 0.3228 non_iid | Private clip-norm grid for `feat_dp` (values are quantiles of the observed private-residual gradient norms). |
+| `--tuned-c` | 0.1 iid / 0.3 non_iid | Logistic-regression C used by the DP arms (originally selected by the `lbfgs` arm's validation grid search). |
+| `--fetch-raw` | off | Run nilearn's `fetch_abide_pcp` first (downloads raw derivatives if missing). |
+
+### `scripts/summarize_abide.py`
+
+| Parameter | Default | Purpose |
+| --- | --- | --- |
+| `--data-dir` / `--output-root` | required / `<data-dir>/outputs` | Locates the results tree to aggregate. |
+| `--split` | required | Which tree to summarize (`iid` or `non_iid`). |
+| `--stages` | `all` | Any of `tables` (cross-ε summary CSVs), `plots` (privacy-utility curves), `subgroups` (per-subgroup metric tables, non-IID), `latex` (LaTeX table export, non-IID). |
+
+### `scripts/train_abide_hf.py` (HF backend — environment variables)
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `ABIDE_DATA_DIR` | required | ABIDE PCP root. |
+| `ABIDE_FC_DIR` | `<ABIDE_DATA_DIR>/fc_features` | FC feature directory. |
+| `FEATURE_JSON` / `PHENOTYPIC_CSV` | packaged / default location | Overrides for the sensitive-feature list and the phenotypic CSV. |
+| `INCLUDE_FMRI` / `INCLUDE_SENSITIVE` | 1 / 1 | Modality ablations (at least one must be on; DP forces both on). |
+| `INCLUDE_SITE_ID_AS_FEATURE` | 0 | Optionally adds SITE_ID as an input feature (off in all reported runs). |
+| `USE_DP` | 0 | Switch differential privacy on. |
+| `FEATURE_DP` | 0 | With `USE_DP=1`: 1 = Feature-DP (fMRI public, phenotypes private), 0 = full DP-SGD. |
+| `TARGET_EPS` / `CLIP_NORM` / `PUBLIC_CLIP` | 8.0 / 1.0 / 50.0 | Privacy budget, private clip norm, public clip norm (Feature-DP). |
+| `SEED` | 81 | Run seed. |
+| `EPOCHS` / `BATCH` / `GRAD_ACCUM` | 100 / 64 / 1 | Optimization schedule (under DP the effective batch is `BATCH*GRAD_ACCUM`). |
+| `LR` / `WEIGHT_DECAY` / `WARMUP_RATIO` | 1e-3 / 1e-4 / 0.0 | AdamW settings. |
+| `EVAL_STRATEGY`, `EVAL_STEPS`, `SAVE_STRATEGY`, `SAVE_STEPS`, `LOGGING_STRATEGY`, `LOGGING_STEPS` | epoch / 500 / epoch / 500 / steps / 10 | Evaluation, checkpointing and logging cadence. |
+| `OUT_DIR` / `RUN_NAME` | auto-generated from the setting | Output directory and W&B run name. |
+| `WANDB_MODE` | online | `disabled` runs without W&B. |

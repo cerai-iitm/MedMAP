@@ -9,7 +9,7 @@ regimes on identical data pipelines:
 1. **Non-private** training (with per-modality ablations),
 2. **DP-SGD** — the standard baseline: every example's entire gradient is
    clipped and noised, and
-3. **Feature-DP** (ours) — only the gradient component attributable to the
+3. **Feature-DP** — only the gradient component attributable to the
    private modality is clipped and noised; the public component stays exact.
    At equal privacy budget ε, Feature-DP consistently retains more utility.
 
@@ -161,6 +161,11 @@ one target per invocation; seeds are explicit everywhere; preprocessing
 results are cached so sweeps only pay the training cost. Note that reported
 ε values cover the final training run (hyperparameter selection is not
 composed into the budget).
+
+Every entry point also documents all of its parameters: each dataset page
+ends with a **Parameter reference** section explaining every CLI flag /
+environment variable, its default, and its purpose, and `--help` works on
+every script.
 
 ## Extending MedMAP
 

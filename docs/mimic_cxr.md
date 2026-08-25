@@ -7,7 +7,7 @@ modality), fine-tuning MedGemma (`google/medgemma-4b-pt`) with LoRA.
 Contents: [Access & download](#1-access--download) ·
 [Preprocessing](#2-preprocessing) · [Training](#3-training) ·
 [Reproducibility notes](#4-reproducibility-notes) ·
-[License & citations](#5-license--citations)
+[License & citations](#5-license--citations) · [Parameter reference](#6-parameter-reference)
 
 ---
 
@@ -269,3 +269,83 @@ Please cite the following when using this part of the benchmark:
   journal = {arXiv preprint arXiv:2507.05201}, year = {2025}
 }
 ```
+
+---
+
+## 6. Parameter reference
+
+### `scripts/select_mimic_images.py`
+
+| Parameter | Default | Purpose |
+| --- | --- | --- |
+| `shards` (positional) | — | Which MIMIC shards to index, e.g. `p10 p11 p12` (comma-separated also works). |
+| `--dataset-root` | required | MIMIC-CXR-JPG version directory (contains `files/` and the metadata CSV). |
+| `--output-root` | required | Where the per-shard index CSVs are written. |
+| `--metadata-csv` | `<dataset-root>/mimic-cxr-2.0.0-metadata.csv` | Metadata CSV providing `ViewPosition` etc. |
+| `--skip-file-verification` | off | By default images missing on disk are skipped in favor of the next-best candidate; this flag trusts the metadata blindly. |
+
+### `scripts/extract_mimic_reports.py`
+
+| Parameter | Default | Purpose |
+| --- | --- | --- |
+| `--shard` | required | One or more shards to process, e.g. `--shard p10 p11 p12`. |
+| `--reports-root` | required | Report root containing the `p10..p19` folders. |
+| `--audit-csv` | `<shard>/reports_without_findings_or_impression_mmp.csv` | Where the exclusion list is written. |
+| `--overwrite` | off | Regenerate existing `*_mmp.txt` files (they are skipped by default; the audit CSV is always rebuilt). |
+| `--dry-run` | off | Parse and count without writing anything — run this first. |
+| `--limit N` | all | Process at most N reports per shard (testing aid). |
+| `--progress-every N` | 100 | Progress print frequency. |
+| `--fail-fast` | off | Stop on the first error instead of logging and continuing. |
+
+### `scripts/train_mimic.py`
+
+**Data paths** (all produced in §1–§2):
+
+| Parameter | Default | Purpose |
+| --- | --- | --- |
+| `--top_level_buckets` | required | Shards to train on, e.g. `p10 p11 p12`. |
+| `--best_img_index_root` | required | Output of the image selector. |
+| `--chexpert_csv` / `--split_csv` | required | Official label and split CSVs from MIMIC-CXR-JPG. |
+| `--report_root` | required | Report root containing the `_mmp` files. |
+| `--dataset_cache_root` | required | Where the built HF dataset is cached; sweeps reuse it. |
+| `--dataset_cache_tag` | `v1` | Free-form tag mixed into the cache key (bump to force a parallel cache). |
+| `--rebuild_dataset_cache` | off | Delete and rebuild the cache. |
+| `--output_root` | required | Parent directory for run outputs. |
+| `--attempt` | required | Integer suffix namespacing repeated runs of the same configuration. |
+
+**Modality & privacy:**
+
+| Parameter | Default | Purpose |
+| --- | --- | --- |
+| `--include_img` / `--include_txt` | off/off | Which modalities the model sees (non-private ablations). At least one required; DP forces both on. |
+| `--use_dp` | off | Switch differential privacy on. |
+| `--feature_dp` / `--no-feature_dp` | on | With `--use_dp`: Feature-DP (clip/noise only the private text component) vs. full DP-SGD (clip/noise the whole gradient). |
+| `--target_epsilon` | 4.0 | Privacy budget ε; the noise multiplier is calibrated to reach it (δ = n^-1.1). |
+| `--clip_norm` | 1.0 | Per-sample clip norm for the private gradient component (the whole gradient under full DP-SGD). |
+| `--public_clip_norm` | 50.0 | Per-sample clip norm for the public (image) component under Feature-DP; large = effectively unclipped. |
+
+**Optimization:**
+
+| Parameter | Default | Purpose |
+| --- | --- | --- |
+| `--num_train_epochs` | 3.0 | Training epochs. |
+| `--per_device_train_batch_size` | 4 | Batch per device. Under DP this is multiplied by `--gradient_accumulation_steps` (the DP trainer microbatches internally). |
+| `--gradient_accumulation_steps` | 8 | Gradient accumulation (microbatch count under DP). |
+| `--learning_rate` / `--weight_decay` / `--warmup_ratio` | 5e-5 / 0.01 / 0.03 | AdamW settings. Reported DP runs used lr 2e-3. |
+| `--max_length` | 426 | Tokenizer truncation length (use 226 for text-only runs). |
+| `--bf16` / `--tf32` | off | Mixed-precision switches (used for non-private runs; DP runs used fp32). |
+| `--gradient_checkpointing` | off | Trade compute for memory. |
+| `--use_lora`, `--lora_r`, `--lora_alpha`, `--lora_dropout` | on, 16, 32, 0.0 | LoRA adapter configuration on the MedGemma backbone. |
+| `--seed` | 42 | Run seed (model init, data order, DP noise). Reported runs: 42/100/123. |
+| `--resume_from_checkpoint` | — | Resume path for an interrupted run. |
+
+**Evaluation / checkpointing / logging:**
+
+| Parameter | Default | Purpose |
+| --- | --- | --- |
+| `--eval_strategy`, `--eval_steps` | steps, 800 | When to run validation (`epoch` also supported). |
+| `--save_strategy`, `--save_steps`, `--save_total_limit` | steps, 800, unlimited | Checkpointing cadence and retention. |
+| `--load_best_model_at_end` | on | Restore the best checkpoint (by `--metric_for_best_model`, default `eval_loss`) before the final test evaluation. |
+| `--metric_for_best_model` / `--greater_is_better` | eval_loss / auto | Model-selection metric; direction is inferred (loss ⇒ lower is better) unless set. |
+| `--logging_steps` | 1 | Train-loss logging frequency. |
+| `--wandb_project`, `--wandb_entity`, `--wandb_mode`, `--wandb_tags`, `--wandb_watch_model`, `--gpu_log_every_n_steps` | see `--help` | W&B configuration; `--wandb_mode disabled` runs without W&B (see docs/wandb.md). |

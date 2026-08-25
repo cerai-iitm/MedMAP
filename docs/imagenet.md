@@ -7,7 +7,7 @@ ImageNet-Captions) is the private modality. This non-medical arm sanity-checks
 the privacy mechanisms on a standard vision-language task.
 
 Contents: [Download](#1-download) · [Dataset assembly](#2-dataset-assembly) ·
-[Training](#3-training) · [License & citations](#4-license--citations)
+[Training](#3-training) · [License & citations](#4-license--citations) · [Parameter reference](#5-parameter-reference)
 
 ---
 
@@ -121,3 +121,43 @@ data is redistributed with this repository.
   journal = {arXiv preprint arXiv:2504.05299}, year = {2025}
 }
 ```
+
+---
+
+## 5. Parameter reference
+
+### `scripts/train_imagenet.py` (environment variables)
+
+**Data & model:**
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `CAPTIONS_JSON` | — (edit example) | Path to `imagenet_captions.json`. |
+| `ROOT_ZIP_PATH` | — (edit example) | ILSVRC download: either the Kaggle zip or its extracted directory. |
+| `TRAIN_TXT` | `ILSVRC/ImageSets/CLS-LOC/train_cls.txt` | Train-split listing inside the ILSVRC layout. |
+| `TINY_IMAGENET_WNIDS` | required | `wnids.txt` from tiny-imagenet-200 defining the 200-class subset. |
+| `MODEL_NAME` | `HuggingFaceTB/SmolVLM-256M-Base` | Backbone checkpoint. |
+
+**Modality & privacy:**
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `INCLUDE_IMG` / `INCLUDE_TEXT` | 1 / 1 | Modality ablations (DP forces both on). |
+| `USE_DP` | 0 | Switch differential privacy on. |
+| `FEATURE_DP` | 0 | With `USE_DP=1`: 1 = Feature-DP (image public, caption text private), 0 = full DP-SGD. |
+| `TARGET_EPS` / `CLIP_NORM` | 1.0 / 1.0 | Privacy budget and private clip norm (the public clip is `50/effective_batch`, matching the reported runs). |
+
+**Optimization & splits:**
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `SEED` | 100 | Run seed (also controls the random split when `USE_SPLIT_IDX=0`). |
+| `USE_SPLIT_IDX` | 0 | 1 = use the fixed packaged split indices (`medmap/datasets/imagenet/splits/`), the exact split of the reported runs; 0 = stratified 60/20/20 split by `SEED`. |
+| `EPOCHS` / `BATCH` / `GRAD_ACCUM` | 10 / 16 / 64 | Under DP the per-device batch becomes `BATCH*GRAD_ACCUM` (manual microbatching). |
+| `LR` / `WEIGHT_DECAY` / `WARMUP_RATIO` | 5e-5 / 0.01 / 0.03 | AdamW settings (DP example uses lr 5e-4). |
+| `MAX_LENGTH` | 128 | Caption truncation length. |
+| `USE_LORA`, `LORA_R`, `LORA_ALPHA`, `LORA_DROPOUT` | 1, 16, 32, 0.05 | LoRA adapter configuration. |
+| `GRAD_CHECKPOINT` | 0 | Gradient checkpointing (memory saver; safe to enable). |
+| `EVAL_STRATEGY`, `EVAL_STEPS`, `SAVE_STRATEGY`, `SAVE_STEPS`, `LOGGING_STRATEGY`, `LOGGING_STEPS` | steps / 700 / steps / 700 / steps / 1 | Evaluation, checkpointing and logging cadence (keep save and eval aligned: best-checkpoint loading is on). |
+| `OUT_DIR` / `RUN_NAME` | auto-generated from the setting | Output directory and W&B run name. |
+| `WANDB_MODE` | online | `disabled` runs without W&B. |
