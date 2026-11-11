@@ -25,23 +25,6 @@ import os
 import argparse
 import json
 
-from transformers import AutoProcessor, TrainingArguments
-from transformers.utils import logging as hf_logging
-from dp_transformers.arguments import PrivacyArguments
-
-from medmap.common.utils import seed_everything, get_formatted_datetime_string, _final_cleanup, _is_main_process
-from medmap.datasets.mimic_cxr.builder import load_or_build_cached_mimic_splits
-from medmap.training.collators import Gemma3HeteroNoDummyCollator
-from medmap.training.metrics import build_compute_metrics
-from medmap.models.medgemma import setup_medgemma_model
-from medmap.training.trainers import get_trainer
-from medmap.training.callbacks import (
-    WandbInitAndPanelsCallback, WandbEvalLoggingCallback, WandbGpuStatsCallback,
-    ForcedEpochEvalCallback, MirrorValEvalToTestCallback, WandbTestLoggingCallback,
-    SaveEverythingCallback, MemoryCleanupCallback, WandbPerLabelRocCurveCallbackInbuilt,
-    EpochAndBestPredictionDumpCallback
-)
-
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -55,6 +38,10 @@ def main():
     ap.add_argument("--best_img_index_root", type=str, required=True,
                     help="Root of the best-image index written by scripts/select_mimic_images.py "
                          "(<root>/<shard>/<shard>_best_img_final.csv).")
+    ap.add_argument("--image_root", type=str, default=None,
+                    help="MIMIC-CXR-JPG version directory used to resolve portable relative "
+                         "image paths in the best-image index. Required for indexes generated "
+                         "by the current selector; legacy absolute-path indexes do not need it.")
     ap.add_argument("--chexpert_csv", type=str, required=True,
                     help="mimic-cxr-2.0.0-chexpert.csv from MIMIC-CXR-JPG.")
     ap.add_argument("--split_csv", type=str, required=True,
@@ -119,12 +106,43 @@ def main():
     # W&B (python-only setup; use --wandb_mode disabled to run without W&B)
     ap.add_argument("--wandb_project", type=str, default="medmap-mimic-medgemma")
     ap.add_argument("--wandb_entity", type=str, default=None)
-    ap.add_argument("--wandb_mode", type=str, default="online", choices=["online", "offline", "disabled"])
+    ap.add_argument("--wandb_mode", type=str, default="disabled", choices=["online", "offline", "disabled"])
     ap.add_argument("--wandb_tags", type=str, default="")  # comma-separated
     ap.add_argument("--wandb_watch_model", action=argparse.BooleanOptionalAction, default=False)
     ap.add_argument("--gpu_log_every_n_steps", type=int, default=1)
 
-    args, _ = ap.parse_known_args()
+    args = ap.parse_args()
+
+    # Import training dependencies only after argument parsing so --help works
+    # in a lightweight preprocessing environment.
+    from dp_transformers.arguments import PrivacyArguments
+    from transformers import AutoProcessor, TrainingArguments
+    from transformers.utils import logging as hf_logging
+
+    from medmap.common.utils import (
+        _final_cleanup,
+        _is_main_process,
+        get_formatted_datetime_string,
+        seed_everything,
+    )
+    from medmap.datasets.mimic_cxr.builder import load_or_build_cached_mimic_splits
+    from medmap.models.medgemma import setup_medgemma_model
+    from medmap.training.callbacks import (
+        EpochAndBestPredictionDumpCallback,
+        ForcedEpochEvalCallback,
+        MemoryCleanupCallback,
+        MirrorValEvalToTestCallback,
+        SaveEverythingCallback,
+        WandbEvalLoggingCallback,
+        WandbGpuStatsCallback,
+        WandbInitAndPanelsCallback,
+        WandbPerLabelRocCurveCallbackInbuilt,
+        WandbTestLoggingCallback,
+    )
+    from medmap.training.collators import Gemma3HeteroNoDummyCollator
+    from medmap.training.metrics import build_compute_metrics
+    from medmap.training.trainers import get_trainer
+
     seed_everything(args.seed)
     use_wandb = args.wandb_mode != "disabled"
 
@@ -174,6 +192,7 @@ def main():
     splits, num_labels, class_names, dataset_cache_dir = load_or_build_cached_mimic_splits(
         top_level_buckets=args.top_level_buckets,
         best_img_index_root=args.best_img_index_root,
+        image_root=args.image_root,
         chexpert_csv=args.chexpert_csv,
         split_csv_path=args.split_csv,
         report_root=args.report_root,
@@ -219,12 +238,13 @@ def main():
 
     compute_metrics = build_compute_metrics(class_names)
 
-    if args.eval_strategy == "steps":
-        actual_save_strategy = "steps"
-        actual_save_steps = args.save_steps
-    else:
-        actual_save_strategy = "epoch"
-        actual_save_steps = None
+    if args.load_best_model_at_end and args.save_strategy != args.eval_strategy:
+        ap.error(
+            "--save_strategy and --eval_strategy must match when "
+            "--load_best_model_at_end is enabled."
+        )
+    actual_save_strategy = args.save_strategy
+    actual_save_steps = args.save_steps if args.save_strategy == "steps" else None
 
     greater_is_better = args.greater_is_better
     if greater_is_better is None:
