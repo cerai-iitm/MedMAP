@@ -1,51 +1,53 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
 
-# MedGemma on MIMIC-CXR, non-private, both modalities.
-# Edit the DATA_* variables to match your download locations
-# (see docs/mimic_cxr.md for the preprocessing steps that produce them).
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd -P)"
+# shellcheck source=scripts/lib/workspace.sh
+source "${SCRIPT_DIR}/../scripts/lib/workspace.sh"
+cd "${MEDMAP_REPO_ROOT}"
 
-SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
-REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." >/dev/null 2>&1 && pwd)"
-cd "${REPO_ROOT}"
-
-TRAIN_MODULE="scripts.train_mimic"
-if [[ ! -d "medmap" || ! -f "scripts/train_mimic.py" ]]; then
-    echo "Error: Could not locate the MedMAP repository root (got: $(pwd))." && exit 1
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+    exec "${MEDMAP_PYTHON}" -m scripts.train_mimic --help
 fi
+medmap_create_workspace
 
-# ---------------------------------------------------------------------------
-# User configuration
-# ---------------------------------------------------------------------------
+read -r -a SHARDS <<< "${MIMIC_SHARDS:-p10 p11 p12}"
+for shard in "${SHARDS[@]}"; do
+    if [[ ! "${shard}" =~ ^p1[0-9]$ ]]; then
+        printf 'Error: invalid MIMIC shard: %s (expected p10..p19)\n' "${shard}" >&2
+        exit 2
+    fi
+done
+
+MIMIC_RAW="${MEDMAP_RAW_ROOT}/mimic-cxr"
+JPG_ROOT="${MIMIC_RAW}/physionet.org/files/mimic-cxr-jpg/2.1.0"
+INDEX_ROOT="${MEDMAP_PROCESSED_ROOT}/mimic-cxr/best-image-index"
+REPORT_ROOT="${MEDMAP_PROCESSED_ROOT}/mimic-cxr/reports-mmp"
+CACHE_ROOT="${MEDMAP_PROCESSED_ROOT}/mimic-cxr/dataset-cache"
+
+medmap_require_dir "${JPG_ROOT}/files"
+medmap_require_dir "${INDEX_ROOT}"
+medmap_require_dir "${REPORT_ROOT}"
+medmap_require_file "${JPG_ROOT}/mimic-cxr-2.0.0-chexpert.csv"
+medmap_require_file "${JPG_ROOT}/mimic-cxr-2.0.0-split.csv"
+
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
-
-DATA_ROOT="/path/to/mimic"                                                    # <- EDIT
-JPG_ROOT="${DATA_ROOT}/physionet.org/files/mimic-cxr-jpg/2.1.0"
-REPORT_ROOT="${DATA_ROOT}/physionet.org/files/mimic-cxr/2.1.0/files"
-BEST_IMG_INDEX_ROOT="${DATA_ROOT}/best_img_index"                             # from scripts/select_mimic_images.py
-DATASET_CACHE_ROOT="${DATA_ROOT}/medmap_dataset_cache"
-# ---------------------------------------------------------------------------
-
-python -m "${TRAIN_MODULE}" \
-  --model_name google/medgemma-4b-pt \
-  --output_root output_mimic_non_private \
-  --top_level_buckets p10 p11 p12 \
-  --best_img_index_root "${BEST_IMG_INDEX_ROOT}" \
-  --chexpert_csv "${JPG_ROOT}/mimic-cxr-2.0.0-chexpert.csv" \
-  --split_csv "${JPG_ROOT}/mimic-cxr-2.0.0-split.csv" \
-  --report_root "${REPORT_ROOT}" \
-  --dataset_cache_root "${DATASET_CACHE_ROOT}" \
-  --bf16 \
-  --tf32 \
-  --no-use_dp \
-  --include_img \
-  --include_txt \
-  --per_device_train_batch_size 4 \
-  --gradient_accumulation_steps 8 \
-  --learning_rate 5e-5 \
-  --num_train_epochs 3.0 \
-  --seed 42 \
-  --attempt 1
-
-# Modality ablations: pass exactly one of --include_img / --include_txt.
-# Text-only runs used --max_length 226; image+text runs used 426.
+exec "${MEDMAP_PYTHON}" -m scripts.train_mimic \
+    --model_name google/medgemma-4b-pt \
+    --output_root "${MEDMAP_OUTPUT_ROOT}/mimic-cxr" \
+    --top_level_buckets "${SHARDS[@]}" \
+    --best_img_index_root "${INDEX_ROOT}" \
+    --image_root "${JPG_ROOT}" \
+    --chexpert_csv "${JPG_ROOT}/mimic-cxr-2.0.0-chexpert.csv" \
+    --split_csv "${JPG_ROOT}/mimic-cxr-2.0.0-split.csv" \
+    --report_root "${REPORT_ROOT}" \
+    --dataset_cache_root "${CACHE_ROOT}" \
+    --bf16 --tf32 --no-use_dp --include_img --include_txt \
+    --per_device_train_batch_size 4 \
+    --gradient_accumulation_steps 8 \
+    --learning_rate 5e-5 \
+    --num_train_epochs 3 \
+    --seed 42 \
+    --attempt 1 \
+    --wandb_mode disabled \
+    "$@"

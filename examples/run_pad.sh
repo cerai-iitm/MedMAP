@@ -1,37 +1,44 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
 
-# PAD-UFES-20: non-private baselines + DP-SGD + Feature DP-SGD sweep.
-# The dataset downloads automatically on first run (--download; ~3.3 GB from
-# Mendeley Data, CC BY 4.0). See docs/pad_ufes.md.
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd -P)"
+# shellcheck source=scripts/lib/workspace.sh
+source "${SCRIPT_DIR}/../scripts/lib/workspace.sh"
+cd "${MEDMAP_REPO_ROOT}"
 
-SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
-REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." >/dev/null 2>&1 && pwd)"
-cd "${REPO_ROOT}"
-
-if [[ ! -d "medmap" || ! -f "scripts/train_pad.py" ]]; then
-    echo "Error: Could not locate the MedMAP repository root (got: $(pwd))." && exit 1
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+    exec "${MEDMAP_PYTHON}" -m scripts.train_pad --help
 fi
+medmap_create_workspace
+
+RAW_ROOT="${MEDMAP_RAW_ROOT}/pad-ufes-20"
+CACHE_PATH="${MEDMAP_PROCESSED_ROOT}/pad-ufes-20/efficientnet-b3-features.npz"
+RESULT_ROOT="${MEDMAP_OUTPUT_ROOT}/pad-ufes-20"
+MODE="${MODE:-sgd}"
+
+medmap_require_file "${RAW_ROOT}/metadata.csv"
+medmap_require_dir "${RAW_ROOT}/all_images"
+medmap_require_file "${CACHE_PATH}"
+
+mode_args=()
+case "${MODE}" in
+    sgd) ;;
+    dpsgd|feature_dpsgd) mode_args+=(--epsilon "${TARGET_EPSILON:-8}") ;;
+    *)
+        printf 'Error: MODE must be sgd, dpsgd, or feature_dpsgd.\n' >&2
+        exit 2
+        ;;
+esac
 
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
-
-DATA_ROOT="${PAD_DATA_ROOT:-/path/to/PAD-UFES-20}"     # <- EDIT
-LR="${LR:-1e-3}"
-SEED="${SEED:-0}"
-EPSILONS="${EPSILONS:-1 2 4 8 16 32 64}"
-
-# 1) Non-private: image-only ("no meta") and image+metadata.
-python -m scripts.train_pad --mode sgd --lr "${LR}" --seed "${SEED}" \
-    --data_root "${DATA_ROOT}" --download
-python -m scripts.train_pad --mode sgd --lr "${LR}" --seed "${SEED}" \
-    --data_root "${DATA_ROOT}" --use_metadata
-
-# 2) DP-SGD and Feature DP-SGD across the epsilon grid.
-for EPS in ${EPSILONS}; do
-    python -m scripts.train_pad --mode dpsgd --lr "${LR}" --seed "${SEED}" \
-        --data_root "${DATA_ROOT}" --epsilon "${EPS}"
-    python -m scripts.train_pad --mode feature_dpsgd --lr "${LR}" --seed "${SEED}" \
-        --data_root "${DATA_ROOT}" --epsilon "${EPS}"
-done
-
-echo "All PAD-UFES-20 runs completed. Subgroup results: subgroup_results.csv"
+exec "${MEDMAP_PYTHON}" -m scripts.train_pad \
+    --mode "${MODE}" \
+    --lr "${LEARNING_RATE:-1e-3}" \
+    --data_root "${RAW_ROOT}" \
+    --img_dir "${RAW_ROOT}/all_images" \
+    --meta_path "${RAW_ROOT}/metadata.csv" \
+    --cache_path "${CACHE_PATH}" \
+    --subgroup_csv "${RESULT_ROOT}/subgroup-results.csv" \
+    --seed "${SEED:-0}" \
+    "${mode_args[@]}" \
+    "$@"

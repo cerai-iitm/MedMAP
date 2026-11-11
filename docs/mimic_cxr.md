@@ -25,45 +25,32 @@ Both are distributed under the **PhysioNet Credentialed Health Data License
 1.5.0**. Do not redistribute any file from either project; this repository
 contains no MIMIC data.
 
-Download (choose a local root, called `$DATA_ROOT` below). The benchmark uses
-shards **p10, p11, p12** (subject IDs starting 10/11/12); downloading only
-those saves substantial space:
+Use the shared workspace from [data_layout.md](data_layout.md). After access is
+approved, the helper downloads benchmark shards **p10, p11, p12** and places
+the three root CSVs correctly inside the MIMIC-CXR-JPG version directory:
 
 ```bash
-DATA_ROOT=/data/mimic
-cd "$DATA_ROOT"
-
-# Reports (mimic-cxr): the .txt radiology reports for p10-p12
-wget -r -N -c -np --user YOUR_PHYSIONET_USER --ask-password \
-    https://physionet.org/files/mimic-cxr/2.1.0/files/p10/ \
-    https://physionet.org/files/mimic-cxr/2.1.0/files/p11/ \
-    https://physionet.org/files/mimic-cxr/2.1.0/files/p12/
-
-# Images + metadata/label/split CSVs (mimic-cxr-jpg)
-wget -r -N -c -np --user YOUR_PHYSIONET_USER --ask-password \
-    https://physionet.org/files/mimic-cxr-jpg/2.1.0/files/p10/ \
-    https://physionet.org/files/mimic-cxr-jpg/2.1.0/files/p11/ \
-    https://physionet.org/files/mimic-cxr-jpg/2.1.0/files/p12/
-wget -N --user YOUR_PHYSIONET_USER --ask-password \
-    https://physionet.org/files/mimic-cxr-jpg/2.1.0/mimic-cxr-2.0.0-metadata.csv.gz \
-    https://physionet.org/files/mimic-cxr-jpg/2.1.0/mimic-cxr-2.0.0-chexpert.csv.gz \
-    https://physionet.org/files/mimic-cxr-jpg/2.1.0/mimic-cxr-2.0.0-split.csv.gz
-gunzip -k mimic-cxr-2.0.0-*.csv.gz
+bash scripts/setup_workspace.sh
+PHYSIONET_USER=your_username bash scripts/download_mimic_cxr.sh
 ```
 
-Expected layout afterwards:
+`wget` requests the password interactively; the script does not store it.
+Set `MIMIC_SHARDS="p10 p11 p12"` only if you need to restate/alter the shard
+list. Expected raw layout:
 
-```
-$DATA_ROOT/physionet.org/files/
-├── mimic-cxr/2.1.0/files/p10/p10000032/s50414267.txt          # reports
+```text
+data/raw/mimic-cxr/physionet.org/files/
+├── mimic-cxr/2.1.0/files/p10/p10000032/s50414267.txt
 └── mimic-cxr-jpg/2.1.0/
-    ├── files/p10/p10000032/s50414267/<dicom_id>.jpg           # images
-    ├── mimic-cxr-2.0.0-metadata.csv                           # ViewPosition etc.
-    ├── mimic-cxr-2.0.0-chexpert.csv                           # CheXpert labels
-    └── mimic-cxr-2.0.0-split.csv                              # official split
+    ├── files/p10/p10000032/s50414267/<dicom_id>.jpg
+    ├── mimic-cxr-2.0.0-metadata.csv
+    ├── mimic-cxr-2.0.0-chexpert.csv
+    └── mimic-cxr-2.0.0-split.csv
 ```
 
-(The CSVs keep their `2.0.0` names inside the 2.1.0 release.)
+The CSVs retain their `2.0.0` names inside release 2.1.0. To use an existing
+approved download, copy or symlink it into exactly this tree, or set
+`MEDMAP_DATA_ROOT` before running every helper.
 
 ## 2. Preprocessing
 
@@ -94,21 +81,25 @@ X-ray ML pipelines (e.g., TorchXRayVision standardizes datasets to frontal
 PA/AP views). Preferring the single most informative, most standardized
 projection keeps exactly one well-defined image per study.
 
+The canonical helper runs this stage together with report preprocessing:
+
 ```bash
-python -m scripts.select_mimic_images p10 p11 p12 \
-    --dataset-root "$DATA_ROOT/physionet.org/files/mimic-cxr-jpg/2.1.0" \
-    --output-root  "$DATA_ROOT/best_img_index"
+bash scripts/prepare_mimic_cxr.sh
 ```
 
-Output: `$DATA_ROOT/best_img_index/<shard>/<shard>_best_img_final.csv` with
-columns `(image_path, subject_id, study_id, dicom_id)` — one row per study.
+It writes `data/processed/mimic-cxr/best-image-index/<shard>/` with columns
+`(image_path, subject_id, study_id, dicom_id)`. `image_path` is relative to
+the MIMIC-CXR-JPG version root (for example `files/p10/...jpg`), so the index
+contains no user/machine path and remains valid when the workspace moves.
+Direct CLI users can opt into legacy absolute paths with `--absolute-paths`.
 
 ### 2b. Leakage-filtered reports (`_mmp`)
 
 The CheXpert labels were generated *from* the reports, so feeding raw
 reports to a classifier leaks the labels. The extraction pipeline
-(`medmap/datasets/mimic_cxr/report_extraction.py`) writes a leakage-filtered
-sibling `s<study_id>_mmp.txt` next to every original report:
+(`medmap/datasets/mimic_cxr/report_extraction.py`) writes a mirrored,
+leakage-filtered `s<study_id>_mmp.txt` under
+`data/processed/mimic-cxr/reports-mmp/`:
 
 1. Sections are parsed with the **official MIT-LCP section parser**
    (vendored, pinned; the same code that produced the MIMIC-CXR-JPG labels),
@@ -123,58 +114,63 @@ sibling `s<study_id>_mmp.txt` next to every original report:
    per-shard audit CSV (`reports_without_findings_or_impression_mmp.csv`);
    those studies are excluded downstream.
 
-Originals are never modified, and only canonical `s<study_id>.txt` files are
-accepted as input, so generated files can never be re-processed.
+Raw reports are never modified. Only canonical `s<study_id>.txt` files are
+accepted, so generated files cannot be reprocessed. The `_mmp` implementation
+is the packaged equivalent of the reference `extract_reports.py`/`_ex_v1`
+pipeline mentioned in the original experiments; only the output suffix and
+portable output location differ.
+
+The shared helper executes both preprocessing stages and stops on the first
+report error:
 
 ```bash
-# Read-only validation first
-python -m scripts.extract_mimic_reports --shard p10 --dry-run --limit 100 \
-    --reports-root "$DATA_ROOT/physionet.org/files/mimic-cxr/2.1.0/files"
-
-# Full processing
-python -m scripts.extract_mimic_reports --shard p10 p11 p12 \
-    --reports-root "$DATA_ROOT/physionet.org/files/mimic-cxr/2.1.0/files"
+bash scripts/prepare_mimic_cxr.sh
+# Set MIMIC_PREPARE_OVERWRITE=1 to regenerate existing processed reports.
 ```
 
-Unit tests for the pipeline: `pytest -q tests/test_mimic_report_extraction.py`.
+For a small read-only parser check before the full run:
+
+```bash
+python -m scripts.extract_mimic_reports --shard p10 --dry-run --limit 100 \
+  --reports-root data/raw/mimic-cxr/physionet.org/files/mimic-cxr/2.1.0/files \
+  --output-root data/processed/mimic-cxr/reports-mmp
+```
+
+Unit tests: `pytest -q tests/test_mimic_report_extraction.py`.
 
 ### 2c. Dataset build & cache (automatic)
 
 `scripts/train_mimic.py` merges the best-image index, the `_mmp` reports and
 the CheXpert labels (dropping `Support Devices` and `No Finding`; `-1`
 uncertain → NaN, ignored by the masked loss), applies the **official
-PhysioNet split**, and caches the result on disk keyed by a fingerprint of
-every source file. Sweeps over seeds/epsilons reuse the cache automatically;
-pass `--rebuild_dataset_cache` to force a rebuild.
+PhysioNet split**, and caches the result on disk using a source/configuration
+fingerprint. Sweeps over seeds/epsilons reuse the cache automatically; pass
+`--rebuild_dataset_cache` after intentionally changing processed reports or
+other source inputs.
 
 ## 3. Training
 
 ```bash
-# Non-private, both modalities (see examples/run_mimic_non_private.sh)
-python -m scripts.train_mimic \
-    --output_root outputs_mimic --attempt 1 \
-    --top_level_buckets p10 p11 p12 \
-    --best_img_index_root "$DATA_ROOT/best_img_index" \
-    --chexpert_csv "$DATA_ROOT/physionet.org/files/mimic-cxr-jpg/2.1.0/mimic-cxr-2.0.0-chexpert.csv" \
-    --split_csv    "$DATA_ROOT/physionet.org/files/mimic-cxr-jpg/2.1.0/mimic-cxr-2.0.0-split.csv" \
-    --report_root  "$DATA_ROOT/physionet.org/files/mimic-cxr/2.1.0/files" \
-    --dataset_cache_root "$DATA_ROOT/medmap_dataset_cache" \
-    --include_img --include_txt --bf16 --tf32 \
-    --per_device_train_batch_size 4 --gradient_accumulation_steps 8 \
-    --learning_rate 5e-5 --num_train_epochs 3.0 --seed 42
+# All paths are supplied by the launcher; append hyperparameter overrides.
+bash examples/run_mimic_non_private.sh \
+  --learning_rate 5e-5 --num_train_epochs 3 --seed 42
 
-# Modality ablations: pass exactly one of --include_img / --include_txt
-# (text-only runs used --max_length 226; image+text runs 426).
+# Text-only (image-only uses --include_img --no-include_txt)
+bash examples/run_mimic_non_private.sh \
+  --no-include_img --include_txt --max_length 226
 
-# Feature-DP at epsilon=4 (image public, text private); full DP-SGD with
-# --no-feature_dp. See examples/run_mimic_private.sh.
-python -m scripts.train_mimic ... \
-    --use_dp --feature_dp --target_epsilon 4.0 \
-    --clip_norm 1.0 --public_clip_norm 50.0 \
-    --no-bf16 --no-tf32 \
-    --per_device_train_batch_size 2 --gradient_accumulation_steps 2 \
-    --learning_rate 2e-3
+# Feature-DP at epsilon 4 (default private mechanism)
+TARGET_EPSILON=4 bash examples/run_mimic_private.sh --seed 42
+
+# Full DP-SGD
+MIMIC_PRIVACY_MODE=full_dp TARGET_EPSILON=4 \
+  bash examples/run_mimic_private.sh --learning_rate 2e-3
 ```
+
+Run either launcher with `--help` for every training option. The launcher
+passes `--image_root` so relative image-index paths resolve against the raw
+MIMIC-CXR-JPG directory, uses only processed `_mmp` reports, caches the joined
+dataset under `data/processed/`, and writes runs under `outputs/mimic-cxr/`.
 
 Notes:
 
@@ -208,6 +204,7 @@ Notes:
 | `--dataset-root` | required | MIMIC-CXR-JPG version directory (contains `files/` and the metadata CSV). |
 | `--output-root` | required | Where the per-shard index CSVs are written. |
 | `--metadata-csv` | `<dataset-root>/mimic-cxr-2.0.0-metadata.csv` | Metadata CSV providing `ViewPosition` etc. |
+| `--absolute-paths` | off | By default CSV image paths are portable paths relative to `--dataset-root`; enable only for legacy behavior. |
 | `--skip-file-verification` | off | By default images missing on disk are skipped in favor of the next-best candidate; this flag trusts the metadata blindly. |
 
 ### `scripts/extract_mimic_reports.py`
@@ -215,8 +212,9 @@ Notes:
 | Parameter | Default | Purpose |
 | --- | --- | --- |
 | `--shard` | required | One or more shards to process, e.g. `--shard p10 p11 p12`. |
-| `--reports-root` | required | Report root containing the `p10..p19` folders. |
-| `--audit-csv` | `<shard>/reports_without_findings_or_impression_mmp.csv` | Where the exclusion list is written. |
+| `--reports-root` | required | Immutable raw report root containing `p10..p19`. |
+| `--output-root` | raw root (legacy) | Processed root that mirrors shard/subject directories; the canonical helper always sets this to `data/processed/mimic-cxr/reports-mmp`. |
+| `--audit-csv` | `<output-root>/<shard>/reports_without_findings_or_impression_mmp.csv` | Explicit single-shard exclusion list; leave unset for multi-shard runs. |
 | `--overwrite` | off | Regenerate existing `*_mmp.txt` files (they are skipped by default; the audit CSV is always rebuilt). |
 | `--dry-run` | off | Parse and count without writing anything — run this first. |
 | `--limit N` | all | Process at most N reports per shard (testing aid). |
@@ -231,8 +229,9 @@ Notes:
 | --- | --- | --- |
 | `--top_level_buckets` | required | Shards to train on, e.g. `p10 p11 p12`. |
 | `--best_img_index_root` | required | Output of the image selector. |
+| `--image_root` | required for relative indexes | MIMIC-CXR-JPG version root used to resolve portable `files/...` image paths. |
 | `--chexpert_csv` / `--split_csv` | required | Official label and split CSVs from MIMIC-CXR-JPG. |
-| `--report_root` | required | Report root containing the `_mmp` files. |
+| `--report_root` | required | Processed report root containing `_mmp` files and audit CSVs. |
 | `--dataset_cache_root` | required | Where the built HF dataset is cached; sweeps reuse it. |
 | `--dataset_cache_tag` | `v1` | Free-form tag mixed into the cache key (bump to force a parallel cache). |
 | `--rebuild_dataset_cache` | off | Delete and rebuild the cache. |

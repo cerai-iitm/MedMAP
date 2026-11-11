@@ -25,40 +25,30 @@ ABIDE I preprocessed data is openly available (no registration) from the
 and the [phenotypic legend (PDF)](https://fcon_1000.projects.nitrc.org/indi/abide/ABIDE_LEGEND_V1.02.pdf).
 
 The benchmark uses the **C-PAC pipeline**, `func_preproc` derivative, with
-no quality filtering, band-pass filtering, or global signal regression —
-exactly what nilearn's `fetch_abide_pcp` downloads. Choose a root directory
-(`$ABIDE_DATA_DIR` below); the raw derivatives are ~100+ GB:
+no quality filtering, band-pass filtering, or global signal regression. The
+canonical helper both downloads through nilearn and extracts reusable
+functional-connectivity features:
 
 ```bash
-export ABIDE_DATA_DIR=/data/abide/ABIDE_PCP_full
-
-python - <<'EOF'
-import os
-from nilearn import datasets
-datasets.fetch_abide_pcp(
-    data_dir=os.environ["ABIDE_DATA_DIR"],
-    pipeline="cpac",
-    derivatives=["func_preproc"],
-    quality_checked=False,
-    band_pass_filtering=False,
-    global_signal_regression=False,
-)
-EOF
+bash scripts/setup_workspace.sh
+bash scripts/prepare_abide.sh
 ```
 
-This also downloads the phenotypic CSV to
-`$ABIDE_DATA_DIR/ABIDE_pcp/Phenotypic_V1_0b_preprocessed1.csv`.
+The raw derivatives are approximately 100+ GB and extraction takes several
+hours. Raw PCP files and the phenotype CSV are written to
+`data/raw/abide/`; the latter is expected at
+`data/raw/abide/ABIDE_pcp/Phenotypic_V1_0b_preprocessed1.csv`.
 
 ## 2. Feature extraction
 
 The experiments consume a small precomputed feature directory
-(`$ABIDE_DATA_DIR/fc_features/`, ~12 MB), not the raw NIfTIs. Generate it
-once (several hours; MSDL atlas → 39 regions → 741 vectorized correlation
-features per subject):
+(`data/processed/abide/fc-features/`, about 12 MB), not raw NIfTIs. The same
+`prepare_abide.sh` command writes `X_conn.npy`, `y.npy`, and `meta.json` there
+(MSDL atlas → 39 regions → 741 vectorized correlation features per subject).
+Pass extractor overrides directly, for example:
 
 ```bash
-python -m scripts.extract_abide_features --data-dir "$ABIDE_DATA_DIR"
-# writes fc_features/{X_conn.npy (1035x741), y.npy, meta.json}
+bash scripts/prepare_abide.sh --t-r 2.0
 ```
 
 Phenotypes are preprocessed at train time (shared logic in both backends):
@@ -70,35 +60,32 @@ on the training split only. `SITE_ID` is never used as an input feature.
 
 ## 3. Classic backend
 
-Run the non-private baseline first — it **creates and persists the fixed
-split** and tunes the global regularization constant C (validation accuracy
-over C ∈ {1e-4 ... 10}) that the DP arms reuse:
+Run the non-private baseline first for the selected protocol, then invoke one
+privacy arm per epsilon. The launcher supplies all canonical paths and forwards
+additional CLI options:
 
 ```bash
-# IID:      stratified random 70/10/20 (seeds 81-90, tuning seed 81)
-# non-IID:  SITE_ID-disjoint via StratifiedGroupKFold — train/val/test share
-#           no acquisition sites (seeds 21-30, tuning seed 21)
-python -m scripts.train_abide_classic --split non_iid --method lbfgs \
-    --data-dir "$ABIDE_DATA_DIR"
+# IID: stratified random protocol; non-IID: SITE_ID-disjoint protocol
+SPLIT=non_iid METHOD=lbfgs bash examples/run_abide_classic.sh
 
-# Full DP-GD and Feature-DP, one target epsilon per invocation:
-for EPS in 1 2 4 8 16 32 64; do
-  python -m scripts.train_abide_classic --split non_iid --method full_dp \
-      --data-dir "$ABIDE_DATA_DIR" --epsilon $EPS
-  python -m scripts.train_abide_classic --split non_iid --method feat_dp \
-      --data-dir "$ABIDE_DATA_DIR" --epsilon $EPS
-done
+METHOD=full_dp TARGET_EPSILON=8 \
+  bash examples/run_abide_classic.sh --iterations 3000
+METHOD=feat_dp TARGET_EPSILON=8 \
+  bash examples/run_abide_classic.sh --iterations 3000
 
-# Summary tables + privacy-utility plots (+ subgroup/LaTeX tables for non_iid)
-python -m scripts.summarize_abide --data-dir "$ABIDE_DATA_DIR" --split non_iid --stages all
+python -m scripts.summarize_abide \
+  --data-dir data/raw/abide \
+  --output-root outputs/abide \
+  --split non_iid --stages all
 ```
 
-`examples/run_abide_classic.sh` wraps the whole sequence. Results land in
+Repeat the two private commands with other `TARGET_EPSILON` values for a
+sweep. Results land in:
 
-```
-<output-root>/{iid,non_iid}_fixed_split/
-├── non_priv/                 # baseline + persisted fixed split + global C
-├── full_dp/e<EPS>/seed<N>/   # per-seed DP-GD outputs + accounting JSONs
+```text
+outputs/abide/{iid,non_iid}_fixed_split/
+├── non_priv/
+├── full_dp/e<EPS>/seed<N>/
 ├── feat_dp/e<EPS>/seed<N>/
 └── *_all_eps_vertical_summary.csv, privacy_utility_plots/, subgroup_metrics/
 ```
@@ -146,9 +133,10 @@ Key variables: `SEED` (81), `EPOCHS` (100), `BATCH` (64), `LR` (1e-3),
 
 ## 5. Reproducibility notes
 
-- Fixed splits are created once from the tuning seed and persisted
-  (`fixed_train_idx.npy`, audit JSONs, and full CSV dumps under
-  `non_priv/`); the DP arms deterministically re-derive the identical split.
+- The baseline persists its selected split and tuned C under `non_priv/`.
+  Current DP modules deterministically reconstruct their protocol from the
+  tuning seed; if the baseline selects a C other than the documented default,
+  pass it explicitly with `--tuned-c` so all arms use that value.
 - The ε sweep is one target per invocation (matching how the original
   experiments were run); each run records its achieved ε and σ in
   `dp_accounting_*.json` files.

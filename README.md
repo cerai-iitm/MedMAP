@@ -47,9 +47,10 @@ medmap/                      the Python package
 │                            DP-GD & Feature-DP + summarizers)
 └── pad/                     PAD-UFES-20 pipeline (features, DP loops)
 
-scripts/                     runnable entry points (python -m scripts.<name>)
-examples/                    ready-to-edit bash launchers for every arm
-docs/                        per-dataset guides + W&B setup
+scripts/                     Python entry points plus workspace/download/
+                             preprocessing shell helpers
+examples/                    parameterized one-run launchers; all forward "$@"
+docs/                        shared data-layout guide + per-dataset guides
 library/dp-transformers/     vendored, MODIFIED dp-transformers fork — the
                              DP/Feature-DP backbone (see MODIFICATIONS.md)
 tests/                       unit tests (report leakage filtering)
@@ -78,29 +79,42 @@ GPUs, and the ABIDE classic backend is CPU-only (NumPy/Numba).
 
 ## Quick start
 
-Each dataset has a two-step pattern — prepare once, then sweep:
+All four datasets use the same repository-local workspace. Create it once;
+paths can be moved without editing scripts by setting `MEDMAP_DATA_ROOT`,
+`MEDMAP_MODEL_CACHE`, and `MEDMAP_OUTPUT_ROOT` first:
 
 ```bash
-# --- MIMIC-CXR (after PhysioNet download, see docs/mimic_cxr.md) ---
-python -m scripts.select_mimic_images p10 p11 p12 --dataset-root ... --output-root ...
-python -m scripts.extract_mimic_reports --shard p10 p11 p12 --reports-root ...
-bash examples/run_mimic_non_private.sh          # or run_mimic_private.sh
-
-# --- ABIDE I (see docs/abide.md) ---
-python -m scripts.extract_abide_features --data-dir $ABIDE_DATA_DIR
-bash examples/run_abide_classic.sh              # sklearn/NumPy backend (paper results)
-bash examples/run_abide_hf_private.sh           # HF backend (same DP stack as the deep models)
-
-# --- PAD-UFES-20 (auto-downloads, see docs/pad_ufes.md) ---
-bash examples/run_pad.sh
-
-# --- Tiny ImageNet / SmolVLM (see docs/imagenet.md) ---
-bash examples/run_imagenet_private.sh
+bash scripts/setup_workspace.sh
 ```
 
-Weights & Biases logging is on by default for the deep-learning arms and
-fully optional — `--wandb_mode disabled` / `WANDB_MODE=disabled` turns it
-off. Setup instructions: [docs/wandb.md](docs/wandb.md).
+The complete cold-start workflow, exact directory tree, access requirements,
+and override examples are in **[docs/data_layout.md](docs/data_layout.md)**.
+The shortest per-dataset sequence is:
+
+```bash
+# MIMIC-CXR: complete both PhysioNet DUAs first
+PHYSIONET_USER=your_username bash scripts/download_mimic_cxr.sh
+bash scripts/prepare_mimic_cxr.sh
+bash examples/run_mimic_non_private.sh --learning_rate 1e-4
+
+# ABIDE I: download C-PAC data and extract connectivity features
+bash scripts/prepare_abide.sh
+SPLIT=non_iid METHOD=lbfgs bash examples/run_abide_classic.sh
+
+# PAD-UFES-20: download, validate, and cache EfficientNet features
+bash scripts/prepare_pad_ufes_20.sh
+MODE=sgd bash examples/run_pad.sh --use_metadata --epochs 100
+
+# Tiny ImageNet: accept ImageNet/Kaggle terms and configure Kaggle first
+bash scripts/download_tiny_imagenet.sh
+bash examples/run_imagenet_non_private.sh --validate-only
+bash examples/run_imagenet_non_private.sh --epochs 5
+```
+
+Every run launcher forwards additional arguments to its Python CLI. W&B is
+disabled by default for offline and anonymous use; enable it explicitly only
+when desired. Dataset-specific implementation and parameter details remain in
+the four guides linked above.
 
 ## Where to go next: experiment guide
 
@@ -112,60 +126,55 @@ right command and doc section for each step.
 
 | To do this... | Go here |
 | --- | --- |
-| Download images + reports (PhysioNet, credentialed) | [docs/mimic_cxr.md §1](docs/mimic_cxr.md) |
-| Select one image per study | `python -m scripts.select_mimic_images p10 p11 p12 --dataset-root ... --output-root ...` |
-| Generate leakage-filtered `_mmp` reports | `python -m scripts.extract_mimic_reports --shard p10 p11 p12 --reports-root ...` |
-| Non-private training (both / image-only / text-only) | `examples/run_mimic_non_private.sh`; choose modalities with `--include_img` / `--include_txt` |
-| Full DP-SGD | `examples/run_mimic_private.sh` with `--no-feature_dp` |
-| Feature-DP | `examples/run_mimic_private.sh` (default: `--feature_dp`); sweep with `TARGET_EPSILON=... SEED=...` |
-| Results | `output_mimic_*/outputs_mimic_cxr_medgemma_*/` (metrics JSON, prediction dumps, checkpoints) + W&B |
+| Download images + reports (PhysioNet, credentialed) | `PHYSIONET_USER=... bash scripts/download_mimic_cxr.sh` after both DUAs; see [docs/mimic_cxr.md §1](docs/mimic_cxr.md) |
+| Select images + generate leakage-filtered reports | `bash scripts/prepare_mimic_cxr.sh` (writes only under `data/processed/`) |
+| Non-private training (both / image-only / text-only) | `examples/run_mimic_non_private.sh`; append normal CLI overrides |
+| Full DP-SGD | `MIMIC_PRIVACY_MODE=full_dp examples/run_mimic_private.sh` |
+| Feature-DP | `examples/run_mimic_private.sh` (default); set `TARGET_EPSILON` and append hyperparameter overrides |
+| Results | `outputs/mimic-cxr/outputs_mimic_cxr_medgemma_*/` (metrics, prediction dumps, checkpoints) |
 
 ### ABIDE I (logistic regression) — [docs/abide.md](docs/abide.md)
 
 | To do this... | Go here |
 | --- | --- |
-| Download (nilearn, open access) | [docs/abide.md §1](docs/abide.md) |
-| Extract FC features (once, ~hours) | `python -m scripts.extract_abide_features --data-dir $ABIDE_DATA_DIR` |
-| Non-private baseline + create the fixed split (run this first) | `python -m scripts.train_abide_classic --split {iid,non_iid} --method lbfgs --data-dir ...` |
-| Full DP-GD at a given ε | `python -m scripts.train_abide_classic --split ... --method full_dp --epsilon 8 --data-dir ...` |
-| Feature-DP at a given ε | `python -m scripts.train_abide_classic --split ... --method feat_dp --epsilon 8 --data-dir ...` |
-| Whole benchmark in one go (baseline → ε sweep → summaries) | `examples/run_abide_classic.sh` |
-| Summary tables, privacy-utility plots, subgroup/LaTeX tables | `python -m scripts.summarize_abide --data-dir ... --split ... --stages all` |
-| Same task on the HF/torch stack (swappable-model template) | `examples/run_abide_hf_non_private.sh` / `examples/run_abide_hf_private.sh` (`FEATURE_DP=1` for Feature-DP) |
-| Results | `<data-dir>/outputs/{iid,non_iid}_fixed_split/...` (per-seed dirs, accounting JSONs, summary CSVs, plots) |
+| Download + extract FC features (once, ~hours) | `bash scripts/prepare_abide.sh` |
+| Non-private baseline + create the fixed split (run first) | `SPLIT=non_iid METHOD=lbfgs bash examples/run_abide_classic.sh` |
+| Full DP-GD at a given ε | `METHOD=full_dp TARGET_EPSILON=8 bash examples/run_abide_classic.sh` |
+| Feature-DP at a given ε | `METHOD=feat_dp TARGET_EPSILON=8 bash examples/run_abide_classic.sh` |
+| Custom hyperparameters | Append any `train_abide_classic.py` flag, e.g. `--iterations 3000 --seeds 21,22` |
+| Summary tables, privacy-utility plots, subgroup/LaTeX tables | `python -m scripts.summarize_abide --data-dir data/raw/abide --output-root outputs/abide --split non_iid --stages all` |
+| Same task on the HF/torch stack (advanced alternative) | `examples/run_abide_hf_non_private.sh` / `examples/run_abide_hf_private.sh` |
+| Results | `outputs/abide/{iid,non_iid}_fixed_split/...` |
 
 ### PAD-UFES-20 (EfficientNet + MLP) — [docs/pad_ufes.md](docs/pad_ufes.md)
 
 | To do this... | Go here |
 | --- | --- |
-| Download (automatic on first run) | add `--download` to any command below |
-| Non-private, image-only / image+metadata | `python -m scripts.train_pad --mode sgd --lr 1e-3 --data_root ...` (add `--use_metadata`) |
-| Full DP-SGD | `python -m scripts.train_pad --mode dpsgd --lr 1e-3 --epsilon 8 --data_root ...` |
-| Feature-DP | `python -m scripts.train_pad --mode feature_dpsgd --lr 1e-3 --epsilon 8 --data_root ...` |
-| Full grid (both baselines + ε sweep) | `examples/run_pad.sh` |
-| Results | stdout `RESULT ...` lines + per-subgroup accuracies appended to `subgroup_results.csv` |
+| Download, validate, cache EfficientNet features | `bash scripts/prepare_pad_ufes_20.sh` |
+| Non-private, image-only / image+metadata | `MODE=sgd bash examples/run_pad.sh` (append `--use_metadata` for metadata) |
+| Full DP-SGD | `MODE=dpsgd TARGET_EPSILON=8 bash examples/run_pad.sh` |
+| Feature-DP | `MODE=feature_dpsgd TARGET_EPSILON=8 bash examples/run_pad.sh` |
+| Custom hyperparameters | Append any `train_pad.py` flag, e.g. `--epochs 50 --hidden_dim 256` |
+| Results | stdout `RESULT ...` lines + `outputs/pad-ufes-20/subgroup-results.csv` |
 
 ### Tiny ImageNet (SmolVLM) — [docs/imagenet.md](docs/imagenet.md)
 
 | To do this... | Go here |
 | --- | --- |
-| Download (Kaggle ILSVRC + ImageNet-Captions + tiny-imagenet wnids) | [docs/imagenet.md §1](docs/imagenet.md) |
-| Non-private (modalities via `INCLUDE_IMG` / `INCLUDE_TEXT`) | `examples/run_imagenet_non_private.sh` |
-| Full DP-SGD | `FEATURE_DP=0 examples/run_imagenet_private.sh` |
-| Feature-DP | `FEATURE_DP=1 examples/run_imagenet_private.sh` |
-| Results | `outputs_smolvlm_*/` + W&B |
+| Download (Kaggle ILSVRC + ImageNet-Captions + Tiny WNIDs) | `bash scripts/download_tiny_imagenet.sh` after accepting ImageNet/Kaggle terms |
+| Validate the complete 200-class join and fixed split | `bash examples/run_imagenet_non_private.sh --validate-only` |
+| Non-private (modalities are CLI flags) | `examples/run_imagenet_non_private.sh` with appended overrides |
+| Full DP-SGD | `IMAGENET_PRIVACY_MODE=full_dp examples/run_imagenet_private.sh` |
+| Feature-DP | `examples/run_imagenet_private.sh` (default) |
+| Results | `outputs/tiny-imagenet/` |
 
-Common conventions across all datasets: `--use_dp` / `USE_DP=1` switches
-privacy on and `feature_dp` selects Feature-DP vs. full DP-SGD; ε sweeps are
-one target per invocation; seeds are explicit everywhere; preprocessing
-results are cached so sweeps only pay the training cost. Note that reported
-ε values cover the final training run (hyperparameter selection is not
-composed into the budget).
-
-Every entry point also documents all of its parameters: each dataset page
-ends with a **Parameter reference** section explaining every CLI flag /
-environment variable, its default, and its purpose, and `--help` works on
-every script.
+Common conventions across all datasets: setup/download/preparation helpers use
+the shared roots in `docs/data_layout.md`; one-run launchers forward additional
+CLI arguments unchanged; privacy sweeps use one target ε per invocation; seeds
+are explicit; and reusable preprocessing products are cached. CLI-based entry
+points expose `--help`; the legacy ABIDE HF alternative remains configured by
+environment variables. Reported ε values cover the final training run
+(hyperparameter selection is not composed into the budget).
 
 ## Extending MedMAP
 

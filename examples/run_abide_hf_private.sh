@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
 
 # ABIDE linear model (HF backend) with differential privacy.
-#   FEATURE_DP=0 -> Full DP-SGD
-#   FEATURE_DP=1 -> Feature-DP (fMRI public, sensitive phenotypes private)
-# Set ABIDE_DATA_DIR to your ABIDE PCP root (see docs/abide.md).
+# FEATURE_DP=0 selects full DP-SGD; FEATURE_DP=1 selects Feature-DP.
 
-SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
-REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." >/dev/null 2>&1 && pwd)"
-cd "${REPO_ROOT}"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd -P)"
+# shellcheck source=scripts/lib/workspace.sh
+source "${SCRIPT_DIR}/../scripts/lib/workspace.sh"
+medmap_create_workspace
+cd "${MEDMAP_REPO_ROOT}"
 
 TRAIN_MODULE="scripts.train_abide_hf"
 if [[ ! -d "medmap" || ! -f "scripts/train_abide_hf.py" ]]; then
@@ -24,10 +24,13 @@ export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:T
 # ============================================================
 # Data configuration
 # ============================================================
-export ABIDE_DATA_DIR="${ABIDE_DATA_DIR:-/path/to/abide/ABIDE_PCP_full}"   # <- EDIT
-export ABIDE_FC_DIR="${ABIDE_FC_DIR:-${ABIDE_DATA_DIR}/fc_features}"
+export ABIDE_DATA_DIR="${ABIDE_DATA_DIR:-${MEDMAP_RAW_ROOT}/abide}"
+export ABIDE_FC_DIR="${ABIDE_FC_DIR:-${MEDMAP_PROCESSED_ROOT}/abide/fc-features}"
 export FEATURE_JSON="${FEATURE_JSON:-}"
-export PHENOTYPIC_CSV="${PHENOTYPIC_CSV:-}"
+export PHENOTYPIC_CSV="${PHENOTYPIC_CSV:-${ABIDE_DATA_DIR}/ABIDE_pcp/Phenotypic_V1_0b_preprocessed1.csv}"
+medmap_require_file "${ABIDE_FC_DIR}/X_conn.npy"
+medmap_require_file "${ABIDE_FC_DIR}/y.npy"
+medmap_require_file "${PHENOTYPIC_CSV}"
 
 # ============================================================
 # Reproducibility
@@ -55,7 +58,7 @@ export EVAL_STRATEGY="${EVAL_STRATEGY:-epoch}"
 export EVAL_STEPS="${EVAL_STEPS:-500}"
 
 # W&B: set WANDB_MODE=disabled to run without Weights & Biases.
-export WANDB_MODE="${WANDB_MODE:-online}"
+export WANDB_MODE="${WANDB_MODE:-disabled}"
 
 # ============================================================
 # Privacy configuration
@@ -77,7 +80,7 @@ export INCLUDE_SITE_ID_AS_FEATURE="${INCLUDE_SITE_ID_AS_FEATURE:-0}"
 # ============================================================
 # Output configuration
 # ============================================================
-BASE_OUT_DIR="${BASE_OUT_DIR:-outputs_abide_linear_private}"
+BASE_OUT_DIR="${BASE_OUT_DIR:-${MEDMAP_OUTPUT_ROOT}/abide/hf-private}"
 STAMP="$(date +%Y%m%d_%H%M%S)"
 mkdir -p "${BASE_OUT_DIR}"
 
@@ -95,7 +98,7 @@ run_private() {
     export OUT_DIR="${BASE_OUT_DIR}/${MODE_NAME}_eps_${TARGET_EPS}_clip_${CLIP_NORM}_lr_${LR}_seed_${SEED}_${STAMP}"
     export RUN_NAME="ABIDE-Linear-${MODE_NAME}-eps-${TARGET_EPS}-clip-${CLIP_NORM}-lr-${LR}-seed-${SEED}-${STAMP}"
 
-    python -m "${TRAIN_MODULE}"
+    "${MEDMAP_PYTHON}" -m "${TRAIN_MODULE}"
 }
 
 # 1. Full DP-SGD: fMRI + sensitive

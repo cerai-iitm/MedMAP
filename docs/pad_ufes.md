@@ -14,25 +14,27 @@ Contents: [Download](#1-download) · [Preprocessing](#2-preprocessing) ·
 ## 1. Download
 
 PAD-UFES-20 is openly available from Mendeley Data under **CC BY 4.0**
-(DOI: [10.17632/zr7vgbcyr2.1](https://doi.org/10.17632/zr7vgbcyr2.1), ~3.3 GB).
-
-Easiest: let the training script download and lay it out for you on the
-first run:
+(DOI: [10.17632/zr7vgbcyr2.1](https://doi.org/10.17632/zr7vgbcyr2.1), about 3.3 GB).
+The canonical preparation command downloads the official archive, validates
+that every metadata image exists, downloads EfficientNet-B3 weights when not
+cached, and builds reusable image features:
 
 ```bash
-python -m scripts.train_pad --mode sgd --lr 1e-3 --use_metadata \
-    --data_root /data/PAD-UFES-20 --download
+bash scripts/setup_workspace.sh
+bash scripts/prepare_pad_ufes_20.sh
 ```
 
-This fetches the official archive, extracts `imgs_part_1..3`, and flattens
-all images into `<data_root>/all_images/`. Manual download works too — the
-expected layout is simply:
+Expected raw layout:
 
+```text
+data/raw/pad-ufes-20/
+├── metadata.csv
+└── all_images/              # flat, filenames match metadata img_id
 ```
-/data/PAD-UFES-20/
-├── metadata.csv          # 2,298 lesion records, 26 columns
-└── all_images/           # all 2,298 images (flat, named by img_id)
-```
+
+To validate/download without extracting EfficientNet features, append
+`--no-extract-features`; rerun the command without that option before
+training.
 
 ## 2. Preprocessing
 
@@ -40,9 +42,10 @@ Everything is built into the pipeline (`medmap/pad/`):
 
 - **Images** (`features.py`): a frozen, ImageNet-pretrained EfficientNet-B3
   (300x300 input, `features`+`avgpool`, eval mode) produces a 1536-d
-  embedding per image. Extraction runs once and is cached to
-  `<data_root>/features_cache_patient_ohe.npz`; every later run (seeds,
-  epsilons, modes) reuses the cache.
+  embedding per image. Preparation runs once and caches features plus their
+  ordered image IDs at
+  `data/processed/pad-ufes-20/efficientnet-b3-features.npz`; later runs
+  reject/rebuild a cache whose IDs do not match `metadata.csv`.
 - **Metadata** (`preprocessing.py`): age is bucketed into 10 clinical bins
   and lesion diameters into 7; every feature column is canonicalized
   (missing/empty → "Unknown", booleans normalized, "BRASIL" → "BRAZIL") and
@@ -55,28 +58,24 @@ Everything is built into the pipeline (`medmap/pad/`):
 
 ## 3. Training
 
-Three modes on the same MLP head (`medmap/models/pad_mlp.py`:
-Linear(input, 512) → ReLU → Linear(512, 6)):
+Three modes use the same MLP head (`medmap/models/pad_mlp.py`:
+Linear(input, 512) → ReLU → Linear(512, 6)). The launcher supplies raw,
+processed, and output paths; append any `scripts.train_pad` option:
 
 ```bash
-DATA=/data/PAD-UFES-20
+# Non-private image-only (default) or image + metadata
+MODE=sgd bash examples/run_pad.sh --epochs 100
+MODE=sgd bash examples/run_pad.sh --use_metadata --hidden_dim 256
 
-# Non-private image-only ("no meta": metadata block zeroed, same input dim)
-python -m scripts.train_pad --mode sgd --lr 1e-3 --data_root $DATA
-
-# Non-private image + metadata
-python -m scripts.train_pad --mode sgd --lr 1e-3 --data_root $DATA --use_metadata
-
-# DP-SGD (full gradient clipped to --max_grad_norm, default 1.0)
-python -m scripts.train_pad --mode dpsgd --lr 1e-3 --epsilon 8 --data_root $DATA
-
-# Feature DP-SGD (image vs. metadata gradient components clipped separately:
-# --C_base 50.0 / --C_meta 1.0; noise scales with C_meta only)
-python -m scripts.train_pad --mode feature_dpsgd --lr 1e-3 --epsilon 8 --data_root $DATA
+# Full DP-SGD and Feature-DP at epsilon 8
+MODE=dpsgd TARGET_EPSILON=8 bash examples/run_pad.sh
+MODE=feature_dpsgd TARGET_EPSILON=8 \
+  bash examples/run_pad.sh --C_base 50 --C_meta 1
 ```
 
-`examples/run_pad.sh` runs the full grid (both non-private arms + DP/FDP
-over ε ∈ {1, 2, 4, 8, 16, 32, 64}).
+Repeat a private command with another `TARGET_EPSILON` for a sweep. The
+launcher performs one run, so interrupted experiments can be resumed at the
+sweep-driver level without repeating unrelated arms.
 
 Mechanism details (`medmap/pad/privacy.py`): per-sample gradients are
 computed functionally with `torch.func.vmap(grad(...))` over full-batch
@@ -90,7 +89,8 @@ Each run prints a machine-parsable line
 (`RESULT mode=... lr=... epsilon=... seed=... test_loss=... test_acc=...`),
 full per-class test metrics, and appends per-subgroup test accuracies (age
 bins, gender, family background, smoking/drinking, Fitzpatrick, cancer
-history) to `--subgroup_csv` (default `subgroup_results.csv`).
+history) to `--subgroup_csv` (the launcher uses
+`outputs/pad-ufes-20/subgroup-results.csv`).
 
 ## 4. Reproducibility notes
 

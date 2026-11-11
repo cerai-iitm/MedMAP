@@ -24,9 +24,9 @@ export WANDB_ENTITY=your-team-or-username
 
 | Entry point | How to configure |
 | --- | --- |
-| `scripts/train_mimic.py` | `--wandb_project` (default `medmap-mimic-medgemma`), `--wandb_entity`, `--wandb_mode {online,offline,disabled}`, `--wandb_tags a,b,c`, `--wandb_watch_model`, `--gpu_log_every_n_steps` |
-| `scripts/train_imagenet.py` | env vars: `WANDB_PROJECT`, `WANDB_ENTITY`, `WANDB_MODE`, `RUN_NAME` (run name is auto-generated from the setting if unset) |
-| `scripts/train_abide_hf.py` | env vars: `WANDB_PROJECT` (default `medmap-abide-linear`), `WANDB_ENTITY`, `WANDB_MODE`, `RUN_NAME` |
+| `scripts/train_mimic.py` | CLI: `--wandb_project`, `--wandb_entity`, `--wandb_mode {online,offline,disabled}`, `--wandb_tags`, `--wandb_watch_model`; default mode is `disabled`. |
+| `scripts/train_imagenet.py` | CLI: `--wandb-project`, `--wandb-entity`, `--wandb-mode {online,offline,disabled}`, `--run-name`; default mode is `disabled`. |
+| `scripts/train_abide_hf.py` | Legacy env vars: `WANDB_PROJECT`, `WANDB_ENTITY`, `WANDB_MODE`, `RUN_NAME`. |
 
 Run names encode the experiment configuration (mechanism, epsilon, clip
 norms, learning rate, seed, timestamp), e.g.
@@ -42,7 +42,7 @@ Every experiment runs fine without an account:
 python -m scripts.train_mimic ... --wandb_mode disabled
 
 # ImageNet / ABIDE HF
-WANDB_MODE=disabled bash examples/run_imagenet_non_private.sh
+bash examples/run_imagenet_non_private.sh --wandb-mode disabled
 WANDB_MODE=disabled bash examples/run_abide_hf_private.sh
 ```
 
@@ -51,8 +51,9 @@ still go to stdout and to the JSON/CSV files in the output directory.
 
 ## Offline clusters
 
-Use `WANDB_MODE=offline` (or `--wandb_mode offline`) on air-gapped machines;
-sync later with:
+Use `WANDB_MODE=offline` for the ABIDE HF backend,
+`--wandb_mode offline` for MIMIC, or `--wandb-mode offline` for Tiny ImageNet
+on air-gapped machines; sync later with:
 
 ```bash
 wandb sync wandb/offline-run-*

@@ -1,132 +1,145 @@
 # Tiny ImageNet / ImageNet-Captions: images + captions (SmolVLM)
 
-200-class image classification with SmolVLM
-(`HuggingFaceTB/SmolVLM-256M-Base`, LoRA fine-tuning). Images are the public
-modality; the Flickr-derived caption text (title + tags + description from
-ImageNet-Captions) is the private modality. This non-medical arm sanity-checks
-the privacy mechanisms on a standard vision-language task.
+This task classifies the 200 Tiny ImageNet classes with full-resolution ILSVRC
+training images and SmolVLM (`HuggingFaceTB/SmolVLM-256M-Base`). Images are
+the public modality; Flickr-derived ImageNet-Captions text (title, tags, and
+description) is the private modality.
 
-Contents: [Download](#1-download) · [Dataset assembly](#2-dataset-assembly) ·
-[Training](#3-training) · [Parameter reference](#4-parameter-reference) · [License & citations](#5-license--citations)
+See [data_layout.md](data_layout.md) for the shared workspace and root
+overrides.
 
----
+## 1. Access and download
 
-## 1. Download
+Three sources are required:
 
-Three ingredients:
+1. **ILSVRC 2012 training images** from the Kaggle
+   [ImageNet Object Localization Challenge](https://www.kaggle.com/c/imagenet-object-localization-challenge).
+   Log in, accept the competition/ImageNet terms, install the Kaggle CLI, and
+   put its API credential at `~/.kaggle/kaggle.json` with mode `600`.
+2. **ImageNet-Captions** from the official
+   [mlfoundations repository](https://github.com/mlfoundations/imagenet-captions).
+3. **Tiny ImageNet class IDs** (`wnids.txt`) from
+   [tiny-imagenet-200](http://cs231n.stanford.edu/tiny-imagenet-200.zip).
+   The benchmark uses its class list, not the 64×64 images.
 
-1. **ImageNet (ILSVRC 2012) training images** — from the Kaggle
-   [ImageNet Object Localization Challenge](https://www.kaggle.com/c/imagenet-object-localization-challenge):
+After accepting the required terms:
 
-   ```bash
-   pip install kaggle   # + place your API token at ~/.kaggle/kaggle.json
-   kaggle competitions download -c imagenet-object-localization-challenge
-   # keep the zip, or unzip it — the loader supports both:
-   #   ROOT_ZIP_PATH=/data/imagenet_object_localization_challenge[.zip]
-   ```
+```bash
+bash scripts/setup_workspace.sh
+bash scripts/download_tiny_imagenet.sh
+```
 
-   Access requires accepting the ImageNet terms (non-commercial research /
-   educational use).
+The helper downloads all three sources and creates:
 
-2. **ImageNet-Captions JSON** — Flickr titles/tags/descriptions for ~450k
-   ImageNet train images, from
-   [mlfoundations/imagenet-captions](https://github.com/mlfoundations/imagenet-captions):
+```text
+data/raw/tiny-imagenet/
+├── ilsvrc/
+│   └── imagenet-object-localization-challenge.zip
+│       # or extracted ILSVRC/ImageSets/... and ILSVRC/Data/...
+├── captions/imagenet-captions/imagenet_captions.json
+└── tiny-imagenet-200/wnids.txt
+```
 
-   ```bash
-   git clone https://github.com/mlfoundations/imagenet-captions
-   # -> imagenet_captions.json ; set CAPTIONS_JSON to its path
-   ```
+If ILSVRC came from another approved source, place the ZIP or extracted
+`ILSVRC/` tree under `data/raw/tiny-imagenet/ilsvrc/`, then download only the
+two public metadata sources:
 
-3. **Tiny ImageNet class list** — the 200-class subset is defined by
-   `wnids.txt` from [tiny-imagenet-200](http://cs231n.stanford.edu/tiny-imagenet-200.zip):
+```bash
+bash scripts/download_tiny_imagenet.sh --skip-ilsvrc
+```
 
-   ```bash
-   wget http://cs231n.stanford.edu/tiny-imagenet-200.zip && unzip tiny-imagenet-200.zip
-   export TINY_IMAGENET_WNIDS=/data/tiny-imagenet-200/wnids.txt
-   ```
+No ImageNet image or caption data is redistributed by MedMAP.
 
-## 2. Dataset assembly
+## 2. Validate and assemble
 
-`medmap/datasets/imagenet/builder.py` joins the captions JSON with the
-ILSVRC train listing, builds `<image> <title> <tags> <description>` prompts,
-and filters to the 200 Tiny ImageNet classes. Splitting is either stratified
-60/20/20 by `SEED` (default) or, with `USE_SPLIT_IDX=1`, the fixed index
-files packaged at `medmap/datasets/imagenet/splits/` (the exact split used
-for the reported runs).
+The builder joins `imagenet_captions.json` to
+`ILSVRC/ImageSets/CLS-LOC/train_cls.txt`, creates
+`<image> <title> <tags> <description>` prompts, and filters to the 200 WNIDs.
+Before model download/training, validate the entire join and packaged split:
+
+```bash
+bash examples/run_imagenet_non_private.sh --validate-only
+```
+
+Validation checks:
+
+- the captions JSON, ILSVRC directory/ZIP, train listing, and WNID file exist;
+- `wnids.txt` contains exactly 200 unique IDs;
+- the source join contains all 200 classes; and
+- packaged train/validation/test indices are integer, in bounds, unique, and
+  mutually disjoint.
+
+The reported experiments use packaged fixed indices (`--use-fixed-split`).
+Use `--no-use-fixed-split` only for a new seed-stratified 60/20/20 split.
 
 ## 3. Training
 
-This experiment family is preserved as-is from the original MedMAP
-implementation (env-var configuration), with two fixes: `GRAD_CHECKPOINT=1`
-no longer crashes (the gradient-checkpointing call now happens after model
-creation) and the Tiny ImageNet class list is configurable via
-`TINY_IMAGENET_WNIDS`.
+Launchers provide all data/cache/output paths and forward every extra option
+to `scripts.train_imagenet`:
 
 ```bash
-export CAPTIONS_JSON=/data/imagenet_captions.json
-export ROOT_ZIP_PATH=/data/imagenet_object_localization_challenge
-export TINY_IMAGENET_WNIDS=/data/tiny-imagenet-200/wnids.txt
+# Non-private image + caption
+bash examples/run_imagenet_non_private.sh \
+  --epochs 10 --batch-size 32 --learning-rate 5e-5
 
-# Non-private (modalities via INCLUDE_IMG / INCLUDE_TEXT)
-bash examples/run_imagenet_non_private.sh
+# Non-private modality ablations
+bash examples/run_imagenet_non_private.sh --include-img --no-include-text
+bash examples/run_imagenet_non_private.sh --no-include-img --include-text
 
-# Full DP-SGD (FEATURE_DP=0) or Feature-DP (FEATURE_DP=1; image public,
-# caption text private)
-FEATURE_DP=1 TARGET_EPS=1.0 bash examples/run_imagenet_private.sh
+# Feature-DP (default private mechanism) and full DP-SGD
+IMAGENET_PRIVACY_MODE=feature_dp TARGET_EPSILON=4 \
+  bash examples/run_imagenet_private.sh --gradient-checkpointing
+IMAGENET_PRIVACY_MODE=full_dp TARGET_EPSILON=4 \
+  bash examples/run_imagenet_private.sh
 ```
 
-Notable variables: `SEED` (100), `EPOCHS` (10), `BATCH`/`GRAD_ACCUM` (in DP
-mode the per-device batch becomes `BATCH*GRAD_ACCUM`), `LR`, `MAX_LENGTH`
-(128), `USE_LORA`/`LORA_R`/`LORA_ALPHA`/`LORA_DROPOUT`, `CLIP_NORM`,
-`WANDB_MODE=disabled` to turn W&B off.
+DP forces both modalities. As in the reported implementation, DP expands the
+per-device batch to `batch-size × gradient-accumulation-steps` for manual
+microbatching in the modified trainer; reduce these values if the requested
+effective batch does not fit the available GPU.
 
-## 4. Parameter reference
+W&B is disabled by default. Enable it deliberately with
+`--wandb-mode online`; optionally pass `--wandb-project` and
+`--wandb-entity`. Outputs are placed under `outputs/tiny-imagenet/` and now
+include an explicit final test metrics file after best-checkpoint restoration.
 
-### `scripts/train_imagenet.py` (environment variables)
+## 4. CLI reference
 
-**Data & model:**
+Run `python -m scripts.train_imagenet --help` for the authoritative list.
+Environment variables from the legacy implementation remain fallback values,
+but explicit CLI options take precedence.
 
-| Variable | Default | Purpose |
+| Option | Default | Purpose |
 | --- | --- | --- |
-| `CAPTIONS_JSON` | — (edit example) | Path to `imagenet_captions.json`. |
-| `ROOT_ZIP_PATH` | — (edit example) | ILSVRC download: either the Kaggle zip or its extracted directory. |
-| `TRAIN_TXT` | `ILSVRC/ImageSets/CLS-LOC/train_cls.txt` | Train-split listing inside the ILSVRC layout. |
-| `TINY_IMAGENET_WNIDS` | required | `wnids.txt` from tiny-imagenet-200 defining the 200-class subset. |
-| `MODEL_NAME` | `HuggingFaceTB/SmolVLM-256M-Base` | Backbone checkpoint. |
+| `--captions-json` | required | `imagenet_captions.json`. |
+| `--root-zip-path` | required | Kaggle competition ZIP or extracted root containing `ILSVRC/`. |
+| `--train-txt` | `ILSVRC/ImageSets/CLS-LOC/train_cls.txt` | Train listing inside the directory/ZIP. |
+| `--tiny-imagenet-wnids` | required | Tiny ImageNet `wnids.txt`. |
+| `--model-name` | `HuggingFaceTB/SmolVLM-256M-Base` | Backbone ID or local path. |
+| `--output-dir`, `--run-name` | generated | Artifact directory and run label. |
+| `--validate-only` | off | Assemble/validate data and split, then exit before model loading. |
+| `--include-img`, `--include-text` | on, on | Non-private modalities; at least one is required. |
+| `--use-dp` | off | Enable differential privacy; forces both modalities. |
+| `--feature-dp` | off | With DP, Feature-DP when enabled and full DP-SGD when disabled. |
+| `--target-epsilon`, `--clip-norm`, `--public-clip-norm` | 1, 1, 50 | Privacy budget and private/public clipping. |
+| `--use-fixed-split` | on | Use packaged reported split indices. |
+| `--seed` | 100 | Model/data seed (also random-split seed when fixed split is off). |
+| `--epochs`, `--batch-size`, `--gradient-accumulation-steps` | 10, 16, 64 | Optimization schedule/microbatching. |
+| `--learning-rate`, `--weight-decay`, `--warmup-ratio` | 5e-5, 0.01, 0.03 | AdamW settings. |
+| `--max-length` | 128 | Caption token limit. |
+| `--use-lora`, `--lora-r`, `--lora-alpha`, `--lora-dropout` | on, 16, 32, 0.05 | LoRA configuration. |
+| `--gradient-checkpointing` | off | Trade compute for memory. |
+| `--eval-strategy`, `--eval-steps` | steps, 700 | Validation cadence. |
+| `--save-strategy`, `--save-steps` | steps, 700 | Checkpoint cadence; strategy must match evaluation when best-model loading is on. |
+| `--resume-from-checkpoint` | unset | Resume an interrupted Trainer run. |
+| `--wandb-mode` | disabled | `disabled`, `offline`, or `online`. |
 
-**Modality & privacy:**
-
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `INCLUDE_IMG` / `INCLUDE_TEXT` | 1 / 1 | Modality ablations (DP forces both on). |
-| `USE_DP` | 0 | Switch differential privacy on. |
-| `FEATURE_DP` | 0 | With `USE_DP=1`: 1 = Feature-DP (image public, caption text private), 0 = full DP-SGD. |
-| `TARGET_EPS` / `CLIP_NORM` | 1.0 / 1.0 | Privacy budget and private clip norm (the public clip is `50/effective_batch`, matching the reported runs). |
-
-**Optimization & splits:**
-
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `SEED` | 100 | Run seed (also controls the random split when `USE_SPLIT_IDX=0`). |
-| `USE_SPLIT_IDX` | 0 | 1 = use the fixed packaged split indices (`medmap/datasets/imagenet/splits/`), the exact split of the reported runs; 0 = stratified 60/20/20 split by `SEED`. |
-| `EPOCHS` / `BATCH` / `GRAD_ACCUM` | 10 / 16 / 64 | Under DP the per-device batch becomes `BATCH*GRAD_ACCUM` (manual microbatching). |
-| `LR` / `WEIGHT_DECAY` / `WARMUP_RATIO` | 5e-5 / 0.01 / 0.03 | AdamW settings (DP example uses lr 5e-4). |
-| `MAX_LENGTH` | 128 | Caption truncation length. |
-| `USE_LORA`, `LORA_R`, `LORA_ALPHA`, `LORA_DROPOUT` | 1, 16, 32, 0.05 | LoRA adapter configuration. |
-| `GRAD_CHECKPOINT` | 0 | Gradient checkpointing (memory saver; safe to enable). |
-| `EVAL_STRATEGY`, `EVAL_STEPS`, `SAVE_STRATEGY`, `SAVE_STEPS`, `LOGGING_STRATEGY`, `LOGGING_STEPS` | steps / 700 / steps / 700 / steps / 1 | Evaluation, checkpointing and logging cadence (keep save and eval aligned: best-checkpoint loading is on). |
-| `OUT_DIR` / `RUN_NAME` | auto-generated from the setting | Output directory and W&B run name. |
-| `WANDB_MODE` | online | `disabled` runs without W&B. |
-
----
-
-## 5. License & citations
+## 5. Terms and citations
 
 **Data terms:** ImageNet is available for non-commercial research and
 educational purposes under its terms of access; Tiny ImageNet and
 ImageNet-Captions derive from it. ImageNet-Captions metadata originates from
-Flickr and is subject to the original uploaders' terms. No image or caption
-data is redistributed with this repository.
+Flickr and remains subject to original uploader/source terms.
 **Model:** SmolVLM is released under Apache-2.0.
 
 ```bibtex
