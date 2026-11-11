@@ -223,17 +223,22 @@ Leakage filtering vendors pinned resources from the
 
 ## Citation
 
-If you use MedMAP, please cite (reference anonymized for double-blind
-review; the final citation will appear here upon publication):
+MedMAP was accepted at ML4H 2026 (Proceedings Track). If you use MedMAP,
+please cite:
 
 ```bibtex
-@misc{medmap2026,
-  title  = {MedMAP: A Benchmark for Multimodal Medical Machine Learning under Differential Privacy},
-  author = {Anonymous Authors},
-  year   = {2026},
-  note   = {Under review}
+@inproceedings{doddamani2026medmap,
+  title     = {MedMAP: A Medically Grounded Multi-Modal Benchmark for Modality-Asymmetric Privacy},
+  author    = {Doddamani, Kaushik Ningappa and Mahendran, Karthick Krishna and Kulkarni, Janardhan and Guha Thakurta, Abhradeep and Prakash, Saurav and Pillutla, Krishna},
+  booktitle = {Proceedings of the Machine Learning for Health (ML4H) Symposium},
+  year      = {2026}
 }
 ```
+
+**Authors:** Kaushik Ningappa Doddamani (IIT Madras), Karthick Krishna
+Mahendran (University of Southern California), Janardhan Kulkarni (Microsoft
+Research), Abhradeep Guha Thakurta (Google), Saurav Prakash (IIT Madras), and
+Krishna Pillutla (IIT Madras).
 
 Please additionally cite the datasets and tools you use — the exact BibTeX
 entries are listed on each dataset page (`docs/*.md`) and in

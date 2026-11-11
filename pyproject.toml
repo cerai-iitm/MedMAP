@@ -9,7 +9,14 @@ description = "MedMAP: a benchmark for multimodal medical machine learning under
 readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
-authors = [{ name = "The MedMAP Authors" }]
+authors = [
+    { name = "Kaushik Ningappa Doddamani" },
+    { name = "Karthick Krishna Mahendran" },
+    { name = "Janardhan Kulkarni" },
+    { name = "Abhradeep Guha Thakurta" },
+    { name = "Saurav Prakash" },
+    { name = "Krishna Pillutla" },
+]
 keywords = [
     "differential-privacy",
     "benchmark",
