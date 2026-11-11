@@ -28,6 +28,7 @@ import json
 import os
 import shutil
 import time
+from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 import numpy as np
@@ -35,7 +36,6 @@ import pandas as pd
 from datasets import Dataset, DatasetDict, Features, Sequence, Value, load_from_disk
 from datasets import Image as DatasetsImage
 
-from medmap.common.utils import _safe_read_text
 from medmap.datasets.mimic_cxr.report_extraction import AUDIT_CSV_NAME, REPORT_SUFFIX
 
 # Filename suffix of the leakage-filtered reports consumed by the builder.
@@ -149,11 +149,43 @@ def split_mimic_dataset_official_by_ids(
     return DatasetDict(train=train_ds, validation=val_ds, test=test_ds)
 
 
+def _resolve_indexed_image_path(image_path: str, image_root: str | None) -> str:
+    """Resolve a portable index path against the explicit JPG version root."""
+
+    path = Path(str(image_path))
+    if path.is_absolute():
+        resolved = path
+    else:
+        if image_root is None:
+            raise ValueError(
+                "The best-image index contains relative paths, but no image_root was "
+                "provided. Pass the MIMIC-CXR-JPG version directory through "
+                "--image_root."
+            )
+        resolved = Path(image_root).resolve() / path
+    if not resolved.is_file():
+        raise FileNotFoundError(f"Indexed MIMIC-CXR JPG does not exist: {resolved}")
+    return str(resolved)
+
+
+def _read_required_report(path: str) -> str:
+    """Read one processed report and fail clearly instead of returning empty text."""
+
+    report_path = Path(path)
+    if not report_path.is_file():
+        raise FileNotFoundError(
+            f"Processed MIMIC-CXR report does not exist: {report_path}. "
+            "Run scripts/prepare_mimic_cxr.sh before training."
+        )
+    return report_path.read_text(encoding="utf-8")
+
+
 def build_mimic_chexpert_dataset(
     top_level_buckets: List[str],
     best_img_index_root: str,
     chexpert_csv: str,
     report_root: str,
+    image_root: str | None = None,
     drop_all_nan_rows: bool = True,
 ) -> Tuple[Dataset, int, List[str]]:
     """
@@ -176,6 +208,9 @@ def build_mimic_chexpert_dataset(
         best_df['subject_id'] = best_df['subject_id'].astype(int)
         best_df['study_id'] = best_df['study_id'].astype(int)
         best_df['dicom_id'] = best_df['dicom_id'].astype(str)
+        best_df['image_path'] = best_df['image_path'].apply(
+            lambda value: _resolve_indexed_image_path(value, image_root)
+        )
         print(f"Loaded {len(best_df)} entries from {best_csv_path}")
 
         excluded_studies_csv = os.path.join(report_root, top_level_bucket, AUDIT_CSV_NAME)
@@ -193,7 +228,7 @@ def build_mimic_chexpert_dataset(
             + best_df['study_id'].astype(str)
             + REPORT_FILENAME_SUFFIX
         )
-        best_df["report_txt"] = best_df["report_path"].apply(_safe_read_text)
+        best_df["report_txt"] = best_df["report_path"].apply(_read_required_report)
 
         # Concatenate
         if best_df_concat is None:
@@ -263,7 +298,8 @@ def _dataset_source_fingerprint(path: str) -> Dict[str, Any]:
 
 
 def _dataset_cache_spec(
-    top_level_buckets, best_img_index_root, chexpert_csv, split_csv_path, report_root, cache_tag
+    top_level_buckets, best_img_index_root, chexpert_csv, split_csv_path,
+    report_root, image_root, cache_tag,
 ):
     source_files = [chexpert_csv, split_csv_path]
     for bucket in top_level_buckets:
@@ -276,6 +312,7 @@ def _dataset_cache_spec(
         "cache_tag": str(cache_tag),
         "top_level_buckets": list(top_level_buckets),
         "xrv_root": os.path.abspath(best_img_index_root),
+        "image_root": os.path.abspath(image_root) if image_root else None,
         "report_root": os.path.abspath(report_root),
         "drop_all_nan_rows": True,
         "strict_split_matching": True,
@@ -286,11 +323,12 @@ def _dataset_cache_spec(
 
 def load_or_build_cached_mimic_splits(
     *, top_level_buckets, best_img_index_root, chexpert_csv, split_csv_path,
-    report_root, cache_root, cache_tag="v1", rebuild_cache=False,
+    report_root, image_root=None, cache_root, cache_tag="v1", rebuild_cache=False,
 ) -> Tuple[DatasetDict, int, List[str], str]:
     """Load cached official splits, or build and atomically save them once."""
     spec = _dataset_cache_spec(
-        top_level_buckets, best_img_index_root, chexpert_csv, split_csv_path, report_root, cache_tag
+        top_level_buckets, best_img_index_root, chexpert_csv, split_csv_path,
+        report_root, image_root, cache_tag,
     )
     spec_json = json.dumps(spec, sort_keys=True, separators=(",", ":"))
     cache_hash = hashlib.sha256(spec_json.encode("utf-8")).hexdigest()[:16]
@@ -336,7 +374,8 @@ def load_or_build_cached_mimic_splits(
     print(f"[Dataset cache] No cache found. Building dataset for: {cache_dir}")
     ds, num_labels, class_names = build_mimic_chexpert_dataset(
         top_level_buckets=top_level_buckets, best_img_index_root=best_img_index_root,
-        chexpert_csv=chexpert_csv, report_root=report_root, drop_all_nan_rows=True,
+        chexpert_csv=chexpert_csv, report_root=report_root, image_root=image_root,
+        drop_all_nan_rows=True,
     )
     splits = split_mimic_dataset_official_by_ids(
         ds=ds, split_csv_path=split_csv_path, strict=True, keep_ids=True,

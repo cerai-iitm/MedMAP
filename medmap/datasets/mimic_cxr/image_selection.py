@@ -262,8 +262,20 @@ def select_best_images(
     return selected, tier_counts
 
 
-def write_selection_csv(output_path: Path, candidates: Sequence[Candidate]) -> None:
-    """Atomically write the four requested output columns."""
+def write_selection_csv(
+    output_path: Path,
+    candidates: Sequence[Candidate],
+    *,
+    image_root: Path | None = None,
+) -> None:
+    """Atomically write the image index.
+
+    When ``image_root`` is provided, image paths are stored relative to that
+    root (for example ``files/p10/.../image.jpg``). Relative indexes are
+    portable across machines and are resolved by the dataset builder through
+    its explicit ``image_root`` argument. Omitting ``image_root`` preserves
+    the legacy absolute-path behavior for API callers.
+    """
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     temporary_path: Path | None = None
@@ -282,9 +294,17 @@ def write_selection_csv(output_path: Path, candidates: Sequence[Candidate]) -> N
             writer = csv.DictWriter(output_file, fieldnames=OUTPUT_COLUMNS)
             writer.writeheader()
             for candidate in candidates:
+                image_path = candidate.image_path
+                if image_root is not None:
+                    try:
+                        image_path = image_path.resolve().relative_to(image_root.resolve())
+                    except ValueError as error:
+                        raise ValueError(
+                            f"Selected image is outside --dataset-root: {image_path}"
+                        ) from error
                 writer.writerow(
                     {
-                        "image_path": str(candidate.image_path),
+                        "image_path": image_path.as_posix(),
                         "subject_id": candidate.subject_id,
                         "study_id": candidate.study_id,
                         "dicom_id": candidate.dicom_id,
@@ -339,6 +359,14 @@ def build_argument_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--absolute-paths",
+        action="store_true",
+        help=(
+            "Store absolute JPG paths in the generated CSV. By default paths are "
+            "relative to --dataset-root and are portable across machines."
+        ),
+    )
+    parser.add_argument(
         "--skip-file-verification",
         action="store_true",
         help=(
@@ -385,7 +413,11 @@ def main() -> None:
             / shard
             / f"{shard}_best_img_final.csv"
         )
-        write_selection_csv(output_path, selected[shard])
+        write_selection_csv(
+            output_path,
+            selected[shard],
+            image_root=None if args.absolute_paths else args.dataset_root,
+        )
 
         counts = tier_counts[shard]
         print(

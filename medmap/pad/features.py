@@ -74,11 +74,20 @@ def load_or_build_raw_features(cache_path: str, meta_path: str, img_dir: str,
     if os.path.exists(cache_path):
         print(f"Loading cached image features from {cache_path}")
         data = np.load(cache_path, allow_pickle=True)
-        if 'img_features' in data.files and len(data['img_features']) == len(img_ids):
-            img_features = data['img_features'].astype(np.float32)
+        cached_ids = data["img_ids"].astype(str) if "img_ids" in data.files else None
+        ids_match = cached_ids is not None and np.array_equal(cached_ids, img_ids.astype(str))
+        if (
+            "img_features" in data.files
+            and len(data["img_features"]) == len(img_ids)
+            and ids_match
+        ):
+            img_features = data["img_features"].astype(np.float32)
             print("Using cached EfficientNet features.")
         else:
-            print("Cache incompatible with current metadata; rebuilding image features.")
+            print(
+                "Cache is missing image IDs or does not match metadata order; "
+                "rebuilding image features."
+            )
 
     if img_features is None:
         feature_extractor = build_feature_extractor(device)
@@ -86,7 +95,8 @@ def load_or_build_raw_features(cache_path: str, meta_path: str, img_dir: str,
         img_features = extract_image_features(
             img_meta, feature_extractor, img_dir, device, batch_size=32
         ).astype(np.float32)
-        np.savez(cache_path, img_features=img_features)
+        os.makedirs(os.path.dirname(os.path.abspath(cache_path)), exist_ok=True)
+        np.savez(cache_path, img_features=img_features, img_ids=img_ids.astype(str))
         print(f"Cached image features to {cache_path}")
 
     if len(img_features) != len(y_all):

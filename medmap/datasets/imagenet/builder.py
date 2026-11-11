@@ -53,6 +53,7 @@ def build_imagenet_dataset(
     train_txt_rel: str,
     use_tiny: bool = True,
     tiny_wnids_path: Optional[str] = None,
+    validate_images: bool = False,
 ):
     caps = pd.read_json(captions_json)
     caps["wnid/filename"] = caps["wnid"] + "/" + caps["filename"].str.replace(".JPEG", "", regex=False)
@@ -79,6 +80,24 @@ def build_imagenet_dataset(
         keep = set(tiny_df['wnid'].astype(str).str.strip().str.lower().dropna().unique())
         df = df[df['wnid'].astype(str).str.strip().str.lower().isin(keep)].copy()
         df = df.reset_index(drop=True)
+
+    if validate_images:
+        if is_fs:
+            missing_images = [path for path in df["image_path"] if not os.path.isfile(path)]
+        else:
+            with zipfile.ZipFile(root_or_zip) as archive:
+                members = set(archive.namelist())
+            expected_members = [
+                f"ILSVRC/Data/CLS-LOC/train/{row.wnid}/{row.filename}"
+                for row in df[["wnid", "filename"]].itertuples(index=False)
+            ]
+            missing_images = [path for path in expected_members if path not in members]
+        if missing_images:
+            examples = ", ".join(str(path) for path in missing_images[:5])
+            raise FileNotFoundError(
+                f"ILSVRC source is incomplete: {len(missing_images)} joined images "
+                f"are missing. Examples: {examples}"
+            )
 
     wnids = df["wnid"].unique().tolist()
     id_map = {w: i for i, w in enumerate(wnids)}

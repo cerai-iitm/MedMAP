@@ -60,34 +60,81 @@ def set_seed(seed: int):
 
 
 # --------------------------------------------------------------------------- #
-# Data download (optional — skipped if IMG_DIR already has images)
+# Data download (optional — validates/repairs an existing partial extraction)
 # --------------------------------------------------------------------------- #
+def _missing_pad_images(metadata_path: str, img_dir: str) -> list[str]:
+    """Return metadata image IDs that are absent from the flat image directory."""
+
+    if not os.path.isfile(metadata_path):
+        return ["<metadata.csv is missing>"]
+    metadata = pd.read_csv(metadata_path, usecols=["img_id"])
+    return [
+        image_id
+        for image_id in metadata["img_id"].astype(str)
+        if not os.path.isfile(os.path.join(img_dir, image_id))
+    ]
+
+
 def download_and_extract(root: str, img_dir: str):
-    import requests
-    url = MENDELEY_URL
+    """Download, extract, or repair PAD-UFES-20 into a flat layout."""
+
     os.makedirs(root, exist_ok=True)
+    os.makedirs(img_dir, exist_ok=True)
+    metadata_path = os.path.join(root, "metadata.csv")
+    missing_before = _missing_pad_images(metadata_path, img_dir)
+    if not missing_before:
+        print(f"PAD-UFES-20 is complete at {root}; skipping download.")
+        return
+    if os.path.isfile(metadata_path) or os.listdir(img_dir):
+        print(
+            f"PAD-UFES-20 is partial ({len(missing_before)} missing entries); "
+            "repairing it from the official archive."
+        )
+
     local_filename = os.path.join(root, "PAD-UFES-20.zip")
+    partial_filename = f"{local_filename}.part"
+    if not os.path.isfile(local_filename):
+        import requests
 
-    print("Downloading PAD-UFES-20 dataset...")
-    with requests.get(url, stream=True) as r:
-        r.raise_for_status()
-        with open(local_filename, "wb") as f:
-            for chunk in r.iter_content(chunk_size=8192):
-                f.write(chunk)
+        print("Downloading PAD-UFES-20 dataset...")
+        with requests.get(MENDELEY_URL, stream=True, timeout=(30, 300)) as response:
+            response.raise_for_status()
+            with open(partial_filename, "wb") as handle:
+                for chunk in response.iter_content(chunk_size=1024 * 1024):
+                    if chunk:
+                        handle.write(chunk)
+        os.replace(partial_filename, local_filename)
+    else:
+        print(f"Using existing archive: {local_filename}")
 
-    with ZipFile(local_filename, "r") as z:
-        z.extractall(root)
+    with ZipFile(local_filename, "r") as archive:
+        archive.extractall(root)
 
     for part in ["imgs_part_1", "imgs_part_2", "imgs_part_3"]:
-        with ZipFile(os.path.join(root, "images", f"{part}.zip"), "r") as z:
-            z.extractall(root)
+        part_archive = os.path.join(root, "images", f"{part}.zip")
+        if not os.path.isfile(part_archive):
+            raise FileNotFoundError(f"Expected image archive is missing: {part_archive}")
+        with ZipFile(part_archive, "r") as archive:
+            archive.extractall(root)
 
-    os.makedirs(img_dir, exist_ok=True)
     for part in ["imgs_part_1", "imgs_part_2", "imgs_part_3"]:
         src = os.path.join(root, part)
-        for fn in os.listdir(src):
-            shutil.move(os.path.join(src, fn), os.path.join(img_dir, fn))
-    print("Done extracting.")
+        if not os.path.isdir(src):
+            raise FileNotFoundError(f"Expected extracted image directory is missing: {src}")
+        for filename in os.listdir(src):
+            source = os.path.join(src, filename)
+            destination = os.path.join(img_dir, filename)
+            if os.path.isfile(source) and not os.path.exists(destination):
+                shutil.move(source, destination)
+
+    missing_after = _missing_pad_images(metadata_path, img_dir)
+    if missing_after:
+        examples = ", ".join(missing_after[:5])
+        raise RuntimeError(
+            f"PAD-UFES-20 extraction is incomplete: {len(missing_after)} metadata "
+            f"images are missing. Examples: {examples}"
+        )
+    print(f"Done extracting and validating PAD-UFES-20 at {root}.")
 
 
 # --------------------------------------------------------------------------- #

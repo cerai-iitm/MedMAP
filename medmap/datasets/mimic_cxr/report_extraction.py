@@ -419,9 +419,19 @@ def write_missing_csv(path: Path, rows: Sequence[dict[str, str]]) -> None:
 def run(args: argparse.Namespace) -> RunStats:
     if not SHARD_RE.fullmatch(args.shard):
         raise ValueError(f"Invalid shard {args.shard!r}; expected p10, p11, ..., p19")
-    shard_root = args.reports_root.resolve() / args.shard
+    reports_root = args.reports_root.resolve()
+    shard_root = reports_root / args.shard
     if not shard_root.is_dir():
         raise FileNotFoundError(f"Shard directory does not exist: {shard_root}")
+
+    configured_output_root = getattr(args, "output_root", None)
+    output_shard_root = (
+        configured_output_root.resolve() / args.shard
+        if configured_output_root is not None
+        else shard_root
+    )
+    if not args.dry_run:
+        output_shard_root.mkdir(parents=True, exist_ok=True)
 
     reports = canonical_reports(shard_root)
     if args.limit is not None:
@@ -435,7 +445,8 @@ def run(args: argparse.Namespace) -> RunStats:
         assert match is not None
         study_id = match.group("study_id")
         study_stem = f"s{study_id}"
-        output_path = report_path.with_name(f"{study_stem}{REPORT_SUFFIX}.txt")
+        relative_parent = report_path.parent.relative_to(shard_root)
+        output_path = output_shard_root / relative_parent / f"{study_stem}{REPORT_SUFFIX}.txt"
         try:
             original = report_path.read_text(encoding="utf-8")
             transformed, lacks_sections, section_spans, mask_spans = transform_report(original, study_stem)
@@ -448,7 +459,7 @@ def run(args: argparse.Namespace) -> RunStats:
                     {
                         "study_id": study_id,
                         "subject_id": report_path.parent.name.removeprefix("p"),
-                        "report_path": str(report_path),
+                        "report_path": report_path.relative_to(reports_root).as_posix(),
                     }
                 )
             if output_path.exists() and not args.overwrite and not args.dry_run:
@@ -466,8 +477,9 @@ def run(args: argparse.Namespace) -> RunStats:
         finally:
             progress.update(report_number)
 
-    audit_path = args.audit_csv or shard_root / AUDIT_CSV_NAME
+    audit_path = args.audit_csv or output_shard_root / AUDIT_CSV_NAME
     if not args.dry_run:
+        audit_path.parent.mkdir(parents=True, exist_ok=True)
         write_missing_csv(audit_path, missing_rows)
     print(json.dumps({**asdict(stats), "audit_csv": str(audit_path)}, indent=2))
     return stats
@@ -491,7 +503,25 @@ def build_parser() -> argparse.ArgumentParser:
             "the p10..p19 shard folders: <download>/physionet.org/files/mimic-cxr/2.1.0/files"
         ),
     )
-    parser.add_argument("--audit-csv", type=Path, default=None)
+    parser.add_argument(
+        "--output-root",
+        type=Path,
+        default=None,
+        help=(
+            "Processed report root. Outputs mirror <output-root>/<shard>/p<subject>/... "
+            "and raw reports remain unchanged. Default: write beside the raw reports "
+            "for backward compatibility."
+        ),
+    )
+    parser.add_argument(
+        "--audit-csv",
+        type=Path,
+        default=None,
+        help=(
+            "Explicit audit CSV path for a single shard. For multiple shards, leave "
+            "unset so each output shard receives its own audit CSV."
+        ),
+    )
     parser.add_argument(
         "--overwrite",
         action="store_true",
@@ -510,6 +540,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def run_many(args: argparse.Namespace) -> list[RunStats]:
+    if args.audit_csv is not None and len(args.shards) != 1:
+        raise ValueError(
+            "--audit-csv may only be used with one --shard. Leave it unset for "
+            "multi-shard runs so each shard gets an independent audit CSV."
+        )
     results: list[RunStats] = []
     for shard in args.shards:
         shard_args = copy(args)
