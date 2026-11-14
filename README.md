@@ -7,51 +7,49 @@ protection than the others**, introduced in
 
 ## The setting
 
-Clinical decisions are rarely made from a single source of data. A radiologist
-reads a chest X-ray together with the referral note and the patient's history;
-a dermatologist looks at a lesion and asks about family cancer history, sun
-exposure and smoking; a psychiatrist combines brain imaging with cognitive
-test scores and demographics. Machine learning models that see the same
-combination of modalities usually outperform models that see imaging alone.
-The extra signal, however, lives in exactly the data that is most sensitive:
-free-text reports can reveal incidental findings, comorbidities and
-stigmatised conditions, and tabular records carry demographics, lifestyle and
-family history. De-identified images are routinely shared for research; the
-accompanying patient data often is not, so models are built without it.
+Medical data is multi-modal. A chest X-ray comes with a radiology report, a
+skin lesion photo comes with the patient's age, skin type and family cancer
+history, and a brain scan comes with IQ scores and demographics. Models that
+use both the image and this patient data predict better than models that use
+the image alone. The catch is that the patient data is also the sensitive
+part: a report can mention an unrelated diagnosis, a history field can reveal
+a stigmatised condition, and a few demographic attributes together can
+identify a person. So in practice the images get used and the patient data
+gets left out.
 
-MedMAP studies this **modality-asymmetric privacy** setting: a public modality
-(imaging) that can be used freely, a protected modality (text or tabular
-patient data) that must be protected, and a label to predict. The question is
-whether a model can use the protected modality to improve its predictions
-while giving a formal guarantee that the protected modality itself cannot be
-recovered from the trained model.
+We call this **modality-asymmetric privacy**: one modality (imaging) can be
+used freely, the other (text or tabular patient data) must be protected, and
+we want to predict a label from both. The question we ask is simple. Can we
+use the sensitive modality to make the model better, and at the same time
+guarantee that nobody can learn that sensitive data back from the model?
 
 ## Differential privacy, briefly
 
-Removing names and identifiers from a training set does not stop a trained
-model from leaking what it saw. A model can memorise individual records, and an
-attacker who already knows a patient's X-ray and diagnosis can probe the model
-to infer what the patient's report or questionnaire said. **Differential
-privacy (DP)** is the standard way to rule this out with mathematics rather
-than with a list of known attacks. A training procedure is differentially
-private if changing one patient's record changes the distribution of the
-resulting model only slightly. The privacy budget **ε** (epsilon) quantifies
-"slightly": smaller ε is stronger protection, and ε around 1 to 8 is typical in
-practice. Because the guarantee holds for any attacker, present or future, it
-is the kind of protection that governance boards and data use agreements can
-reason about.
+Deleting names and IDs from the training data is not enough. A trained model
+can memorise what it saw, and someone who already knows a patient's X-ray and
+diagnosis can query the model to work out what the patient's report said.
+**Differential privacy (DP)** closes this gap with a mathematical guarantee
+instead of a defence against specific attacks: a training algorithm is
+differentially private if changing any one patient's record barely changes the
+model it produces. "Barely" is measured by the privacy budget **ε**. Smaller ε
+means stronger protection; ε between 1 and 8 is common in practice. The
+guarantee holds against any attacker, including ones nobody has thought of
+yet, which is what makes it usable in data use agreements and ethics reviews.
 
-DP is implemented during training by clipping the influence of each record on
-the model update and adding calibrated random noise (DP-SGD). The price is
-utility: noise hurts accuracy, and it hurts most for small datasets, rare
-classes and small subgroups. MedMAP uses two flavours. **Full DP-SGD** protects
-the entire record, including the imaging that could have been used freely.
-**Feature DP** protects only the designated modality: the part of the gradient
-attributable to the protected modality is clipped and noised, while the part
-coming from the public modality is used as is. This gives a formal guarantee
-that an attacker who knows the image and the label still learns almost nothing
-new about the report or questionnaire, at a lower utility cost than protecting
-everything.
+In training, DP works by capping how much any one record can move the model
+and adding random noise to each update (this is DP-SGD). The noise costs
+accuracy, and the cost is largest for small datasets, rare classes and small
+subgroups. MedMAP compares two ways of paying it:
+
+- **Full DP-SGD** protects the whole record, including the image, even though
+  the image did not need protecting.
+- **Feature DP** protects only the sensitive modality. The gradient is split
+  into the part that comes from the image and the part that is added by the
+  patient data; only the second part is clipped and noised. The guarantee is
+  that an attacker who knows the image and the label learns almost nothing new
+  about the report or the questionnaire. Because the image part is left
+  untouched, Feature DP usually keeps more accuracy than full DP, most clearly
+  at small ε, though not in every setting.
 
 ## What MedMAP provides
 
