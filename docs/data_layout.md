@@ -65,9 +65,11 @@ credentialing and accepts both data use agreements:
    [MIMIC-CXR](https://physionet.org/content/mimic-cxr/2.1.0/).
 4. Separately request access and sign the agreement for
    [MIMIC-CXR-JPG](https://physionet.org/content/mimic-cxr-jpg/2.1.0/).
-5. Accept the MedGemma model terms on
-   [Hugging Face](https://huggingface.co/google/medgemma-4b-pt), then run
-   `hf auth login` if the model is not already cached.
+5. Accept the model terms of the backbone you will fine-tune on Hugging Face,
+   [Gemma 3 4B](https://huggingface.co/google/gemma-3-4b-pt) and/or
+   [MedGemma 4B](https://huggingface.co/google/medgemma-4b-pt) (selected with
+   `MIMIC_BACKBONE=gemma|medgemma`), then run `hf auth login` if the model is
+   not already cached.
 
 After approval:
 

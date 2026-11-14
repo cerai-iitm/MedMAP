@@ -75,16 +75,27 @@ class AccLoggingMixin:
             loss *= self.accelerator.num_processes if self.args.n_gpu <= 1 else self.args.n_gpu
 
         try:
-            if labels_for_acc is not None and hasattr(outputs, "logits"):
+            logits = outputs.get("logits") if isinstance(outputs, dict) else getattr(outputs, "logits", None)
+            # Skip the public (image-only) pass under Feature-DP so the logged
+            # train accuracy reflects the full-modality forward only.
+            if labels_for_acc is not None and logits is not None and not public:
                 with torch.no_grad():
-                    preds = outputs.logits.argmax(dim=-1)
-                    labels_for_acc = labels_for_acc.to(preds.device)
-
-                    if labels_for_acc.shape != preds.shape:
-                        labels_for_acc = labels_for_acc.view_as(preds)
-
-                    self._tr_correct += int((preds == labels_for_acc).sum().item())
-                    self._tr_total += int(labels_for_acc.numel())
+                    labels_for_acc = labels_for_acc.to(logits.device)
+                    if labels_for_acc.ndim == 2 and labels_for_acc.is_floating_point():
+                        # Multi-label (MIMIC): NaN-safe micro accuracy over
+                        # known label positions, threshold 0.5 on the sigmoid.
+                        preds = torch.sigmoid(logits) >= 0.5
+                        known = torch.isfinite(labels_for_acc)
+                        targets = labels_for_acc >= 0.5
+                        self._tr_correct += int(((preds == targets) & known).sum().item())
+                        self._tr_total += int(known.sum().item())
+                    else:
+                        # Single-label (ABIDE / ImageNet): argmax accuracy.
+                        preds = logits.argmax(dim=-1)
+                        if labels_for_acc.shape != preds.shape:
+                            labels_for_acc = labels_for_acc.view_as(preds)
+                        self._tr_correct += int((preds == labels_for_acc).sum().item())
+                        self._tr_total += int(labels_for_acc.numel())
         except Exception:
             pass
 

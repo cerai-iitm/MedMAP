@@ -1,4 +1,12 @@
 #!/usr/bin/env bash
+# Non-private MIMIC-CXR fine-tuning (both modalities by default).
+#
+#   MIMIC_BACKBONE=medgemma|gemma   backbone preset (default: medgemma)
+#                                   medgemma -> google/medgemma-4b-pt
+#                                   gemma    -> google/gemma-3-4b-pt
+#
+# Any additional arguments are forwarded to scripts/train_mimic.py and override
+# the values below (e.g. `--no-include_txt` for image-only, `--seed 100`).
 set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd -P)"
@@ -19,6 +27,15 @@ for shard in "${SHARDS[@]}"; do
     fi
 done
 
+BACKBONE="${MIMIC_BACKBONE:-medgemma}"
+case "${BACKBONE}" in
+    medgemma|gemma) ;;
+    *)
+        printf 'Error: MIMIC_BACKBONE must be medgemma or gemma (got %s).\n' "${BACKBONE}" >&2
+        exit 2
+        ;;
+esac
+
 MIMIC_RAW="${MEDMAP_RAW_ROOT}/mimic-cxr"
 JPG_ROOT="${MIMIC_RAW}/physionet.org/files/mimic-cxr-jpg/2.1.0"
 INDEX_ROOT="${MEDMAP_PROCESSED_ROOT}/mimic-cxr/best-image-index"
@@ -33,7 +50,7 @@ medmap_require_file "${JPG_ROOT}/mimic-cxr-2.0.0-split.csv"
 
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
 exec "${MEDMAP_PYTHON}" -m scripts.train_mimic \
-    --model_name google/medgemma-4b-pt \
+    --backbone "${BACKBONE}" \
     --output_root "${MEDMAP_OUTPUT_ROOT}/mimic-cxr" \
     --top_level_buckets "${SHARDS[@]}" \
     --best_img_index_root "${INDEX_ROOT}" \
@@ -47,7 +64,7 @@ exec "${MEDMAP_PYTHON}" -m scripts.train_mimic \
     --gradient_accumulation_steps 8 \
     --learning_rate 5e-5 \
     --num_train_epochs 3 \
-    --seed 42 \
+    --seed "${SEED:-42}" \
     --attempt 1 \
     --wandb_mode disabled \
     "$@"

@@ -24,13 +24,14 @@ export WANDB_ENTITY=your-team-or-username
 
 | Entry point | How to configure |
 | --- | --- |
-| `scripts/train_mimic.py` | CLI: `--wandb_project`, `--wandb_entity`, `--wandb_mode {online,offline,disabled}`, `--wandb_tags`, `--wandb_watch_model`; default mode is `disabled`. |
+| `scripts/train_mimic.py` | CLI: `--wandb_project` (default `medmap-mimic-<backbone>`), `--wandb_entity`, `--wandb_mode {online,offline,disabled}`, `--wandb_tags`, `--wandb_watch_model`; default mode is `disabled`. |
 | `scripts/train_imagenet.py` | CLI: `--wandb-project`, `--wandb-entity`, `--wandb-mode {online,offline,disabled}`, `--run-name`; default mode is `disabled`. |
 | `scripts/train_abide_hf.py` | Legacy env vars: `WANDB_PROJECT`, `WANDB_ENTITY`, `WANDB_MODE`, `RUN_NAME`. |
 
 Run names encode the experiment configuration (mechanism, epsilon, clip
 norms, learning rate, seed, timestamp), e.g.
-`MIMIC-CXR-Medgemma-FeatureDP-eps-4.0-clip-1.0-public-clip-50.0-lr-0.002-seed-42-...`,
+`MIMIC-CXR-Gemma34B-FeatureDP-eps-4.0-clip-1.0-public-clip-69.0-lr-0.002-seed-41-...`
+or `MIMIC-CXR-MedGemma4B-FeatureDP-eps-4.0-clip-1.0-public-clip-50.0-lr-0.002-seed-42-...`,
 so sweeps stay organized without extra bookkeeping.
 
 ## Running without W&B

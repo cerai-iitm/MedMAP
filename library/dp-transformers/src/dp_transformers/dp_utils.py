@@ -280,8 +280,6 @@ class OpacusDPTrainer(Trainer):
         if num_microbatches == 1:
             return [inputs]
 
-        print(type(inputs))
-        
         # get batch size
         if isinstance(inputs, dict):
             batch_size = next(iter(inputs.values())).size(0)

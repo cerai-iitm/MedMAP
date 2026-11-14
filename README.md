@@ -17,7 +17,7 @@ regimes on identical data pipelines:
 
 | Dataset | Task | Public modality | Private modality | Model | Doc |
 | --- | --- | --- | --- | --- | --- |
-| [MIMIC-CXR](docs/mimic_cxr.md) | 12-label CheXpert pathology classification | chest X-ray | leakage-filtered radiology report | MedGemma-4B (LoRA) | [docs/mimic_cxr.md](docs/mimic_cxr.md) |
+| [MIMIC-CXR](docs/mimic_cxr.md) | 12-label CheXpert pathology classification | chest X-ray | leakage-filtered radiology report | Gemma 3 4B **or** MedGemma 4B (LoRA; `--backbone gemma\|medgemma`) | [docs/mimic_cxr.md](docs/mimic_cxr.md) |
 | [ABIDE I](docs/abide.md) | autism vs. control | fMRI functional connectivity | phenotypic record | logistic regression (sklearn **and** HF backends) | [docs/abide.md](docs/abide.md) |
 | [PAD-UFES-20](docs/pad_ufes.md) | 6-class skin-lesion diagnosis | lesion photo (EfficientNet-B3 features) | clinical questionnaire | MLP head | [docs/pad_ufes.md](docs/pad_ufes.md) |
 | [Tiny ImageNet](docs/imagenet.md) | 200-class classification | image | Flickr caption (ImageNet-Captions) | SmolVLM-256M (LoRA) | [docs/imagenet.md](docs/imagenet.md) |
@@ -37,7 +37,8 @@ medmap/                      the Python package
 │   │                        mimic-code resources), cached dataset builder
 │   ├── abide/               HF data pipeline + packaged feature lists
 │   └── imagenet/            ImageNet-Captions builder + fixed split indices
-├── models/                  medgemma, smolvlm, abide_linear, pad_mlp —
+├── models/                  gemma (MedGemma 4B / Gemma 3 4B), smolvlm,
+│                            abide_linear, pad_mlp —
 │                            unified forward contract (public= / feature_dp=)
 │                            so models are swappable under one DP trainer
 ├── training/                trainers (standard + DP), collators, callbacks,
@@ -73,7 +74,7 @@ via `python -m scripts.<name>` from the repository root (a small bootstrap
 adds `library/dp-transformers/src` to `sys.path`). To use it outside the
 repo: `pip install -e library/dp-transformers`.
 
-GPU requirements: MedGemma fine-tuning was run on a single Nvidia L40S GPU
+GPU requirements: Gemma 3 / MedGemma fine-tuning was run on a single Nvidia L40S GPU
 (bf16, LoRA), ABIDE, PAD and Imagenet experiments fit on much smaller
 GPUs, and the ABIDE classic backend is CPU-only (NumPy/Numba).
 
@@ -92,10 +93,12 @@ and override examples are in **[docs/data_layout.md](docs/data_layout.md)**.
 The shortest per-dataset sequence is:
 
 ```bash
-# MIMIC-CXR: complete both PhysioNet DUAs first
+# MIMIC-CXR: complete both PhysioNet DUAs first; accept the Gemma 3 / MedGemma
+# model terms on Hugging Face for the backbone you pick
 PHYSIONET_USER=your_username bash scripts/download_mimic_cxr.sh
 bash scripts/prepare_mimic_cxr.sh
-bash examples/run_mimic_non_private.sh --learning_rate 1e-4
+MIMIC_BACKBONE=gemma bash examples/run_mimic_non_private.sh      # google/gemma-3-4b-pt
+MIMIC_BACKBONE=medgemma bash examples/run_mimic_non_private.sh   # google/medgemma-4b-pt
 
 # ABIDE I: download C-PAC data and extract connectivity features
 bash scripts/prepare_abide.sh
@@ -122,16 +125,17 @@ Every experiment follows the same workflow: **download → preprocess once →
 run the arm(s) you need → aggregate**. The table below routes you to the
 right command and doc section for each step.
 
-### MIMIC-CXR (MedGemma) — [docs/mimic_cxr.md](docs/mimic_cxr.md)
+### MIMIC-CXR (Gemma 3 4B / MedGemma 4B) — [docs/mimic_cxr.md](docs/mimic_cxr.md)
 
 | To do this... | Go here |
 | --- | --- |
+| Choose the backbone | `MIMIC_BACKBONE=gemma` (google/gemma-3-4b-pt, main paper results) or `MIMIC_BACKBONE=medgemma` (google/medgemma-4b-pt, default) in front of either launcher; equivalently `--backbone` on `scripts/train_mimic.py`. The preset sets the model id, δ convention (gemma n^-1.1, medgemma 1/n), sequence length and public clip |
 | Download images + reports (PhysioNet, credentialed) | `PHYSIONET_USER=... bash scripts/download_mimic_cxr.sh` after both DUAs; see [docs/mimic_cxr.md §1](docs/mimic_cxr.md) |
 | Select images + generate leakage-filtered reports | `bash scripts/prepare_mimic_cxr.sh` (writes only under `data/processed/`) |
 | Non-private training (both / image-only / text-only) | `examples/run_mimic_non_private.sh`; append normal CLI overrides |
 | Full DP-SGD | `MIMIC_PRIVACY_MODE=full_dp examples/run_mimic_private.sh` |
 | Feature-DP | `examples/run_mimic_private.sh` (default); set `TARGET_EPSILON` and append hyperparameter overrides |
-| Results | `outputs/mimic-cxr/outputs_mimic_cxr_medgemma_*/` (metrics, prediction dumps, checkpoints) |
+| Results | `outputs/mimic-cxr/outputs_mimic_cxr_<backbone>_*/` (metrics, prediction dumps, checkpoints, `run_config.json`) |
 
 ### ABIDE I (logistic regression) — [docs/abide.md](docs/abide.md)
 

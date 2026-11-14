@@ -1,8 +1,21 @@
-# MIMIC-CXR: chest X-rays + leakage-filtered reports (MedGemma)
+# MIMIC-CXR: chest X-rays + leakage-filtered reports (Gemma 3 4B / MedGemma 4B)
 
 Multi-label classification of the 12 CheXpert pathology labels from chest
 X-ray images (public modality) and free-text radiology reports (private
-modality), fine-tuning MedGemma (`google/medgemma-4b-pt`) with LoRA.
+modality), fine-tuning a Gemma 3 family vision-language model with LoRA.
+Two backbones are supported through one code path (`--backbone`):
+
+| `--backbone` | Hugging Face id | Role in the paper | δ convention | Feature-DP public clip |
+| --- | --- | --- | --- | --- |
+| `gemma` | `google/gemma-3-4b-pt` | main MIMIC-MedMAP results (general-purpose VLM) | δ = n_train^-1.1 | 69 |
+| `medgemma` | `google/medgemma-4b-pt` | medically adapted reference model (pretraining data include MIMIC-CXR) | δ = 1/n_train | 50 |
+
+Both share the Gemma 3 architecture and processor, so the prompt layout
+(`<start_of_image>` block followed by the leakage-filtered report), the
+classifier head, the collator and the DP/Feature-DP trainer are identical;
+only the checkpoint and the preset defaults differ. The presets live in
+`medmap/models/mimic_backbones.py`; the model wrapper is
+`medmap/models/gemma.py` (`medmap/models/medgemma.py` remains as an alias).
 
 Contents: [Access & download](#1-access--download) ·
 [Preprocessing](#2-preprocessing) · [Training](#3-training) ·
@@ -150,27 +163,51 @@ other source inputs.
 
 ## 3. Training
 
-```bash
-# All paths are supplied by the launcher; append hyperparameter overrides.
-bash examples/run_mimic_non_private.sh \
-  --learning_rate 5e-5 --num_train_epochs 3 --seed 42
+Pick the backbone with `MIMIC_BACKBONE=gemma|medgemma` (default `medgemma`);
+everything else is shared. All paths are supplied by the launchers; append
+hyperparameter overrides, which take precedence over the launcher defaults.
 
-# Text-only (image-only uses --include_img --no-include_txt)
-bash examples/run_mimic_non_private.sh \
+```bash
+# Non-private, both modalities (Gemma 3 4B)
+MIMIC_BACKBONE=gemma bash examples/run_mimic_non_private.sh \
+  --learning_rate 5e-5 --num_train_epochs 3 --seed 41
+
+# Same with the medically adapted reference backbone
+MIMIC_BACKBONE=medgemma bash examples/run_mimic_non_private.sh --seed 42
+
+# Image-only / text-only ablations (either backbone)
+MIMIC_BACKBONE=gemma bash examples/run_mimic_non_private.sh --no-include_txt
+MIMIC_BACKBONE=gemma bash examples/run_mimic_non_private.sh \
   --no-include_img --include_txt --max_length 226
 
-# Feature-DP at epsilon 4 (default private mechanism)
-TARGET_EPSILON=4 bash examples/run_mimic_private.sh --seed 42
+# Feature-DP at epsilon 1 (default private mechanism); the public clip and
+# delta come from the backbone preset (gemma: 69, n^-1.1)
+MIMIC_BACKBONE=gemma TARGET_EPSILON=1 bash examples/run_mimic_private.sh --seed 41
 
-# Full DP-SGD
-MIMIC_PRIVACY_MODE=full_dp TARGET_EPSILON=4 \
-  bash examples/run_mimic_private.sh --learning_rate 2e-3
+# Full DP-SGD at epsilon 1
+MIMIC_BACKBONE=gemma MIMIC_PRIVACY_MODE=full_dp TARGET_EPSILON=1 \
+  bash examples/run_mimic_private.sh --seed 41
+
+# Smoke test of the private path with a tiny logical batch
+MIMIC_BACKBONE=gemma MIMIC_MICROBATCH=2 MIMIC_GRAD_ACCUM=2 \
+  bash examples/run_mimic_private.sh --num_train_epochs 0.01
 ```
 
 Run either launcher with `--help` for every training option. The launcher
 passes `--image_root` so relative image-index paths resolve against the raw
 MIMIC-CXR-JPG directory, uses only processed `_mmp` reports, caches the joined
-dataset under `data/processed/`, and writes runs under `outputs/mimic-cxr/`.
+dataset under `data/processed/`, and writes runs under
+`outputs/mimic-cxr/outputs_mimic_cxr_<backbone>_*/` together with a
+`run_config.json` recording the resolved backbone and hyperparameters. The
+dataset cache is backbone-independent and is shared between the two.
+
+Reported private configuration (both backbones): logical batch 1,024 =
+physical microbatch 2 × 512 accumulation steps (`MIMIC_MICROBATCH` /
+`MIMIC_GRAD_ACCUM`), 3 epochs (131 updates, sampling rate ≈ 0.023), clip
+norm 1, DP-SGD learning rate 5e-3, Feature-DP learning rate 2e-3, seeds
+41/42/43 (Gemma 3) and 42/100/123 (MedGemma). The private launcher applies
+these defaults; override any of them via the environment variables listed at
+the top of `examples/run_mimic_private.sh` or by appending CLI flags.
 
 Notes:
 
@@ -181,15 +218,26 @@ Notes:
   gradients are decomposed into a public (image-only) component clipped at
   `--public_clip_norm` and a private residual clipped at `--clip_norm`; only
   the private component sets the noise scale. The noise multiplier is
-  calibrated to `--target_epsilon` with an RDP accountant.
-- W&B is on by default; use `--wandb_mode disabled` to turn it off
-  (see `docs/wandb.md`).
+  calibrated to `--target_epsilon` with an RDP accountant at
+  δ = n_train^`--delta_power` (preset: -1.1 for `gemma`, -1.0 for `medgemma`).
+- Hyperparameter selection is not composed into the reported ε.
+- The launchers disable W&B; pass `--wandb_mode online` to enable it
+  (see `docs/wandb.md`). The default project is `medmap-mimic-<backbone>`.
 
 ## 4. Reproducibility notes
 
 - The official PhysioNet split (train/validate/test) is used; no random
   splitting.
-- Seeds: 42, 100 and 123 were used for the reported runs (`--seed`).
+- Seeds: 41, 42 and 43 for the Gemma 3 runs; 42, 100 and 123 for the MedGemma
+  runs (`--seed`).
+- Gemma 3 results use predictions from the final training epoch
+  (`--no-load_best_model_at_end`); MedGemma private runs retained the
+  checkpoint with the lowest validation loss (`--load_best_model_at_end`,
+  the default).
+- `--delta_power` differs between the backbones on purpose: the MedGemma
+  runs predate the switch to the δ = n^-1.1 convention used elsewhere in
+  MedMAP. Pass `--delta_power -1.1` to run MedGemma under the newer
+  convention.
 - The image selection and report extraction are fully deterministic, so the
   dataset is reconstructible bit-for-bit from a fresh MIMIC download.
 - `--attempt N` namespaces the output directory of repeated configurations.
@@ -223,6 +271,13 @@ Notes:
 
 ### `scripts/train_mimic.py`
 
+**Backbone:**
+
+| Parameter | Default | Purpose |
+| --- | --- | --- |
+| `--backbone` | `medgemma` | `gemma` (google/gemma-3-4b-pt) or `medgemma` (google/medgemma-4b-pt). Supplies the defaults of `--model_name`, `--delta_power`, `--max_length` and `--public_clip_norm`. |
+| `--model_name` | preset | Any Gemma 3 architecture checkpoint on the Hugging Face Hub; overrides the preset id. |
+
 **Data paths** (all produced in §1–§2):
 
 | Parameter | Default | Purpose |
@@ -245,9 +300,10 @@ Notes:
 | `--include_img` / `--include_txt` | off/off | Which modalities the model sees (non-private ablations). At least one required; DP forces both on. |
 | `--use_dp` | off | Switch differential privacy on. |
 | `--feature_dp` / `--no-feature_dp` | on | With `--use_dp`: Feature-DP (clip/noise only the private text component) vs. full DP-SGD (clip/noise the whole gradient). |
-| `--target_epsilon` | 4.0 | Privacy budget ε; the noise multiplier is calibrated to reach it (δ = n^-1.1). |
+| `--target_epsilon` | 4.0 | Privacy budget ε; the noise multiplier is calibrated to reach it with the RDP accountant. |
+| `--delta_power` | preset (-1.1 gemma / -1.0 medgemma) | δ = n_train^delta_power. |
 | `--clip_norm` | 1.0 | Per-sample clip norm for the private gradient component (the whole gradient under full DP-SGD). |
-| `--public_clip_norm` | 50.0 | Per-sample clip norm for the public (image) component under Feature-DP; large = effectively unclipped. |
+| `--public_clip_norm` | preset (69 gemma / 50 medgemma) | Per-sample clip norm for the public (image) component under Feature-DP; large = effectively unclipped. Configured values are divided by the logical batch and applied to microbatch-mean per-sample gradients, so the effective threshold on a raw per-sample gradient is `configured / microbatch` (69 → 34.5, 50 → 25 with microbatch 2). |
 
 **Optimization:**
 
@@ -256,19 +312,20 @@ Notes:
 | `--num_train_epochs` | 3.0 | Training epochs. |
 | `--per_device_train_batch_size` | 4 | Batch per device. Under DP this is multiplied by `--gradient_accumulation_steps` (the DP trainer microbatches internally). |
 | `--gradient_accumulation_steps` | 8 | Gradient accumulation (microbatch count under DP). |
-| `--learning_rate` / `--weight_decay` / `--warmup_ratio` | 5e-5 / 0.01 / 0.03 | AdamW settings. Reported DP runs used lr 2e-3. |
-| `--max_length` | 426 | Tokenizer truncation length (use 226 for text-only runs). |
+| `--learning_rate` / `--weight_decay` / `--warmup_ratio` | 5e-5 / 0.01 / 0.03 | AdamW settings. Reported private runs: 5e-3 (DP-SGD), 2e-3 (Feature-DP). |
+| `--max_length` | preset (482) | Tokenizer truncation length: 256 image soft tokens + delimiters + up to the P99 report length of 211 tokens (use 226 for text-only runs). |
 | `--bf16` / `--tf32` | off | Mixed-precision switches (used for non-private runs; DP runs used fp32). |
 | `--gradient_checkpointing` | off | Trade compute for memory. |
-| `--use_lora`, `--lora_r`, `--lora_alpha`, `--lora_dropout` | on, 16, 32, 0.0 | LoRA adapter configuration on the MedGemma backbone. |
-| `--seed` | 42 | Run seed (model init, data order, DP noise). Reported runs: 42/100/123. |
+| `--use_lora`, `--lora_r`, `--lora_alpha`, `--lora_dropout` | on, 16, 32, 0.0 | LoRA adapter configuration (q/k/v/o/out_proj, gate/up/down_proj, fc1/fc2) on either backbone. |
+| `--seed` | 42 | Run seed (model init, data order, DP noise). Reported runs: 41/42/43 (Gemma 3), 42/100/123 (MedGemma). |
 | `--resume_from_checkpoint` | — | Resume path for an interrupted run. |
 
 **Evaluation / checkpointing / logging:**
 
 | Parameter | Default | Purpose |
 | --- | --- | --- |
-| `--eval_strategy`, `--eval_steps` | steps, 800 | When to run validation (`epoch` also supported). |
+| `--eval_strategy`, `--eval_steps` | steps, 800 | When to run validation (`epoch` also supported; the private launcher uses `epoch`). |
+| `--eval_on_start` | off | Evaluate the untrained model once before training. |
 | `--save_strategy`, `--save_steps`, `--save_total_limit` | steps, 800, unlimited | Checkpointing cadence and retention. |
 | `--load_best_model_at_end` | on | Restore the best checkpoint (by `--metric_for_best_model`, default `eval_loss`) before the final test evaluation. |
 | `--metric_for_best_model` / `--greater_is_better` | eval_loss / auto | Model-selection metric; direction is inferred (loss ⇒ lower is better) unless set. |
@@ -281,8 +338,9 @@ Notes:
 
 **Data license:** PhysioNet Credentialed Health Data License 1.5.0
 (no redistribution; credentialed access only).
-**Model terms:** MedGemma is subject to Google's Health AI Developer
-Foundations terms of use (accepted on Hugging Face before download).
+**Model terms:** Gemma 3 is subject to the Gemma Terms of Use and MedGemma
+to Google's Health AI Developer Foundations terms of use; accept the terms of
+the backbone you use on Hugging Face before downloading.
 
 Please cite the following when using this part of the benchmark:
 
@@ -341,7 +399,13 @@ Please cite the following when using this part of the benchmark:
   note    = {standardizes chest X-ray datasets to frontal (PA/AP) views}
 }
 
-% Backbone model
+% Backbone models
+@article{gemmateam2025gemma3,
+  title   = {Gemma 3 Technical Report},
+  author  = {{Gemma Team} and Kamath, Aishwarya and Ferret, Johan and Pathak, Shreya and Vieillard, Nino and others},
+  journal = {arXiv preprint arXiv:2503.19786}, year = {2025}
+}
+
 @article{sellergren2025medgemma,
   title   = {MedGemma Technical Report},
   author  = {Sellergren, Andrew and others},

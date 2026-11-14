@@ -170,6 +170,11 @@ class Gemma3HeteroNoDummyCollator:
     want_image: bool = True
     want_text: bool = True
 
+    # Optional dtype for pixel_values (e.g. torch.bfloat16 to match a bf16
+    # backbone, as in the reference Gemma/MedGemma scripts). None keeps the
+    # processor's dtype.
+    pixel_values_dtype: Optional[torch.dtype] = None
+
     # If a sample ends up with neither image nor text (e.g. want_image=True but image missing AND want_text=False),
     # we fallback to empty text to keep batch size stable.
     fallback_empty_text: str = ""
@@ -304,6 +309,8 @@ class Gemma3HeteroNoDummyCollator:
 
         # IMPORTANT: pixel_values is FLATTENED images (N_images, C, H, W), not (B, ...)
         if pixel_values is not None:
+            if self.pixel_values_dtype is not None:
+                pixel_values = pixel_values.to(dtype=self.pixel_values_dtype)
             batch["pixel_values"] = pixel_values
 
         return dict(batch)

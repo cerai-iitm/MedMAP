@@ -1,5 +1,16 @@
 #!/usr/bin/env python3
-"""Fine-tune MedGemma on MIMIC-CXR multi-label classification.
+"""Fine-tune a Gemma 3 family VLM (MedGemma 4B or Gemma 3 4B) on MIMIC-CXR
+multi-label classification.
+
+Backbones (``--backbone``):
+
+- medgemma  google/medgemma-4b-pt  (medically adapted reference model; delta = 1/n)
+- gemma     google/gemma-3-4b-pt   (general-purpose base model; delta = n^-1.1)
+
+Both share the Gemma 3 architecture, processor, and classifier wrapper
+(medmap/models/gemma.py). The backbone preset fills in --model_name,
+--delta_power and --max_length when they are not given explicitly; any of them
+can be overridden on the command line.
 
 Supports three privacy modes on the same model/data pipeline:
 
@@ -25,11 +36,18 @@ import os
 import argparse
 import json
 
+from medmap.models.mimic_backbones import BACKBONE_PRESETS, DEFAULT_BACKBONE, resolve_backbone
+
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    # Path Args
-    ap.add_argument("--model_name", type=str, default="google/medgemma-4b-pt")
+    # Backbone / path Args
+    ap.add_argument("--backbone", type=str, default=DEFAULT_BACKBONE, choices=sorted(BACKBONE_PRESETS),
+                    help="Which Gemma 3 family backbone to fine-tune. Sets the defaults of "
+                         "--model_name, --delta_power and --max_length (see medmap/models/gemma.py).")
+    ap.add_argument("--model_name", type=str, default=None,
+                    help="Hugging Face model id. Default: the id of --backbone "
+                         "(google/medgemma-4b-pt or google/gemma-3-4b-pt).")
     ap.add_argument("--output_root", type=str, required=True)
     ap.add_argument("--seed", type=int, default=42)
 
@@ -62,7 +80,10 @@ def main():
     ap.add_argument("--learning_rate", type=float, default=5e-5)
     ap.add_argument("--weight_decay", type=float, default=0.01)
     ap.add_argument("--warmup_ratio", type=float, default=0.03)
-    ap.add_argument("--max_length", type=int, default=426)
+    ap.add_argument("--max_length", type=int, default=None,
+                    help="Tokenizer truncation length (image tokens + text). Default: the backbone "
+                         "preset (482 = 256 image soft tokens + delimiters + up to the P99 report "
+                         "length of 211 tokens). Use ~226 for text-only runs.")
 
     # Execution Args
     ap.add_argument("--include_img", action=argparse.BooleanOptionalAction, default=False)
@@ -71,12 +92,20 @@ def main():
     ap.add_argument("--feature_dp", action=argparse.BooleanOptionalAction, default=True,
                     help="With --use_dp: True = Feature-DP, False = full DP-SGD.")
     ap.add_argument("--target_epsilon", type=float, default=4.0)
+    ap.add_argument("--delta_power", type=float, default=None,
+                    help="Target delta = n_train ** delta_power. Default: the backbone preset "
+                         "(-1.1 for gemma, i.e. delta = n^-1.1 as for ABIDE/PAD; -1.0 for medgemma, "
+                         "i.e. the dp-transformers default delta = 1/n used in the MedGemma runs).")
     ap.add_argument("--clip_norm", type=float, default=1.0)
-    ap.add_argument("--public_clip_norm", type=float, default=50.0)
+    ap.add_argument("--public_clip_norm", type=float, default=None,
+                    help="Per-sample clip norm of the public (image-only) gradient component under "
+                         "Feature-DP. Default: the backbone preset (50 for medgemma, 69 for gemma).")
 
     ap.add_argument("--logging_steps", type=int, default=1)
     ap.add_argument("--eval_strategy", type=str, default="steps", choices=["steps", "epoch"])
     ap.add_argument("--eval_steps", type=int, default=800)
+    ap.add_argument("--eval_on_start", action=argparse.BooleanOptionalAction, default=False,
+                    help="Evaluate the untrained model once before the first step.")
 
     ap.add_argument("--save_strategy", type=str, default="steps", choices=["steps", "epoch"])
     ap.add_argument("--save_steps", type=int, default=800)
@@ -104,7 +133,8 @@ def main():
     ap.add_argument("--greater_is_better", action=argparse.BooleanOptionalAction, default=None)
 
     # W&B (python-only setup; use --wandb_mode disabled to run without W&B)
-    ap.add_argument("--wandb_project", type=str, default="medmap-mimic-medgemma")
+    ap.add_argument("--wandb_project", type=str, default=None,
+                    help="Default: medmap-mimic-<backbone>.")
     ap.add_argument("--wandb_entity", type=str, default=None)
     ap.add_argument("--wandb_mode", type=str, default="disabled", choices=["online", "offline", "disabled"])
     ap.add_argument("--wandb_tags", type=str, default="")  # comma-separated
@@ -112,6 +142,23 @@ def main():
     ap.add_argument("--gpu_log_every_n_steps", type=int, default=1)
 
     args = ap.parse_args()
+
+    # Resolve backbone-dependent defaults (explicit CLI values always win).
+    preset = resolve_backbone(args.backbone)
+    if args.model_name is None:
+        args.model_name = preset.model_name
+    if args.delta_power is None:
+        args.delta_power = preset.delta_power
+    if args.max_length is None:
+        args.max_length = preset.max_length
+    if args.public_clip_norm is None:
+        args.public_clip_norm = preset.public_clip_norm
+    if args.wandb_project is None:
+        args.wandb_project = f"medmap-mimic-{preset.key}"
+    backbone_tag = preset.key            # used in output directory names
+    backbone_label = preset.display_name.replace(" ", "")  # used in W&B run names
+    print(f"[Backbone] {preset.key}: {args.model_name} ({preset.display_name}); "
+          f"max_length={args.max_length}, delta = n_train ** {args.delta_power}")
 
     # Import training dependencies only after argument parsing so --help works
     # in a lightweight preprocessing environment.
@@ -126,7 +173,7 @@ def main():
         seed_everything,
     )
     from medmap.datasets.mimic_cxr.builder import load_or_build_cached_mimic_splits
-    from medmap.models.medgemma import setup_medgemma_model
+    from medmap.models.gemma import setup_gemma_model
     from medmap.training.callbacks import (
         EpochAndBestPredictionDumpCallback,
         ForcedEpochEvalCallback,
@@ -151,24 +198,24 @@ def main():
         args.per_device_train_batch_size = args.per_device_train_batch_size * args.gradient_accumulation_steps
         if not args.feature_dp:
             print("Using FULL DP")
-            output_dir = f"outputs_mimic_cxr_medgemma_fulldp_eps_{args.target_epsilon}_{args.attempt}"
-            wandb_run_name = f"MIMIC-CXR-Medgemma-FullDP-eps-{args.target_epsilon}-clip-{args.clip_norm}-lr-{args.learning_rate}-seed-{args.seed}-{get_formatted_datetime_string()}"
+            output_dir = f"outputs_mimic_cxr_{backbone_tag}_fulldp_eps_{args.target_epsilon}_{args.attempt}"
+            wandb_run_name = f"MIMIC-CXR-{backbone_label}-FullDP-eps-{args.target_epsilon}-clip-{args.clip_norm}-lr-{args.learning_rate}-seed-{args.seed}-{get_formatted_datetime_string()}"
         else:
             print("Using FEATURE DP")
-            output_dir = f"outputs_mimic_cxr_medgemma_featdp_eps_{args.target_epsilon}_{args.attempt}"
-            wandb_run_name = f"MIMIC-CXR-Medgemma-FeatureDP-eps-{args.target_epsilon}-clip-{args.clip_norm}-public-clip-{args.public_clip_norm}-lr-{args.learning_rate}-seed-{args.seed}-{get_formatted_datetime_string()}"
+            output_dir = f"outputs_mimic_cxr_{backbone_tag}_featdp_eps_{args.target_epsilon}_{args.attempt}"
+            wandb_run_name = f"MIMIC-CXR-{backbone_label}-FeatureDP-eps-{args.target_epsilon}-clip-{args.clip_norm}-public-clip-{args.public_clip_norm}-lr-{args.learning_rate}-seed-{args.seed}-{get_formatted_datetime_string()}"
     elif args.include_img and args.include_txt:
-        print("Using both image and text inputs for Non Private Gemma.")
-        output_dir = f"outputs_mimic_cxr_medgemma_cls_both_{args.attempt}"
-        wandb_run_name = f"MIMIC-CXR-Medgemma-Both-ImgTxtClassification-{get_formatted_datetime_string()}"
+        print(f"Using both image and text inputs for Non Private {preset.display_name}.")
+        output_dir = f"outputs_mimic_cxr_{backbone_tag}_cls_both_{args.attempt}"
+        wandb_run_name = f"MIMIC-CXR-{backbone_label}-Both-ImgTxtClassification-{get_formatted_datetime_string()}"
     elif args.include_img:
-        print("Using ONLY image inputs for Non Private Gemma.")
-        output_dir = f"outputs_mimic_cxr_medgemma_cls_img_only_{args.attempt}"
-        wandb_run_name = f"MIMIC-CXR-Medgemma-ImageOnly-{get_formatted_datetime_string()}"
+        print(f"Using ONLY image inputs for Non Private {preset.display_name}.")
+        output_dir = f"outputs_mimic_cxr_{backbone_tag}_cls_img_only_{args.attempt}"
+        wandb_run_name = f"MIMIC-CXR-{backbone_label}-ImageOnly-{get_formatted_datetime_string()}"
     elif args.include_txt:
-        print("Using ONLY text inputs for Non Private Gemma.")
-        output_dir = f"outputs_mimic_cxr_medgemma_cls_txt_only_{args.attempt}"
-        wandb_run_name = f"MIMIC-CXR-Medgemma-TextOnly-{get_formatted_datetime_string()}"
+        print(f"Using ONLY text inputs for Non Private {preset.display_name}.")
+        output_dir = f"outputs_mimic_cxr_{backbone_tag}_cls_txt_only_{args.attempt}"
+        wandb_run_name = f"MIMIC-CXR-{backbone_label}-TextOnly-{get_formatted_datetime_string()}"
     else:
         raise ValueError("At least one of --include_img or --include_txt must be set to True.")
 
@@ -213,6 +260,8 @@ def main():
         processor.tokenizer.padding_side = "right"
 
     # 4. Collator & Metrics
+    import torch
+
     collator = Gemma3HeteroNoDummyCollator(
         processor=processor,
         max_length=args.max_length,
@@ -220,9 +269,10 @@ def main():
         pad_to_multiple_of=8,
         want_image=args.include_img,
         want_text=args.include_txt,
+        pixel_values_dtype=torch.bfloat16,  # backbone weights are loaded in bf16
     )
 
-    model = setup_medgemma_model(args.model_name, num_labels, use_lora=args.use_lora, lora_r=args.lora_r, lora_alpha=args.lora_alpha, lora_dropout=args.lora_dropout).to("cuda")
+    model = setup_gemma_model(args.model_name, num_labels, use_lora=args.use_lora, lora_r=args.lora_r, lora_alpha=args.lora_alpha, lora_dropout=args.lora_dropout).to("cuda")
 
     # Gradient checkpointing (user-controlled)
     if args.gradient_checkpointing:
@@ -280,7 +330,7 @@ def main():
 
         eval_strategy=args.eval_strategy if val_ds is not None else "no",
         eval_steps=args.eval_steps if args.eval_strategy == "steps" else None,
-        eval_on_start=False,
+        eval_on_start=args.eval_on_start,
 
         save_strategy=actual_save_strategy,
         save_steps=actual_save_steps,
@@ -361,10 +411,16 @@ def main():
     }
 
     if args.use_dp:
+        # delta = n_train ** delta_power (gemma: -1.1, i.e. n^-1.1 as for ABIDE/PAD;
+        # medgemma: -1.0, i.e. the dp-transformers default 1/n used in those runs).
+        target_delta = float(len(train_ds) ** args.delta_power)
+        print(f"[Privacy] target_delta = {len(train_ds)} ** {args.delta_power} = {target_delta:.3e}; "
+              f"clip_norm={args.clip_norm}, public_clip_norm={args.public_clip_norm}")
         trainer_kwargs["privacy_args"] = PrivacyArguments(
             per_sample_max_grad_norm=args.clip_norm/args.per_device_train_batch_size,
             public_clip=args.public_clip_norm/args.per_device_train_batch_size,
             target_epsilon=args.target_epsilon,
+            target_delta=target_delta,
             feature_dp=args.feature_dp
         )
 
@@ -381,9 +437,12 @@ def main():
     cb_force_epoch_eval.attach_trainer(trainer)
     cb_mirror_test.attach_trainer(trainer)
 
-    # Save label metadata at root as well
+    # Save label metadata and the resolved run configuration at root as well
     with open(os.path.join(output_dir, "labels_metadata.json"), "w") as f:
         json.dump({"num_labels": num_labels, "class_names": class_names}, f, indent=2)
+    with open(os.path.join(output_dir, "run_config.json"), "w") as f:
+        json.dump({"backbone": preset.key, "backbone_display_name": preset.display_name, **vars(args)},
+                  f, indent=2, default=str)
     try:
         processor.save_pretrained(output_dir)
     except Exception:

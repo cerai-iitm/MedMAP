@@ -7,7 +7,7 @@ commit `f9fae44` ("Add automatic testing of examples (#36)", v1.0.1).
 
 It is the differential-privacy backbone of MedMAP: all DP-SGD and
 Feature-DP fine-tuning of the deep models
-(MedGemma, SmolVLM, and the ABIDE Hugging Face linear model) runs through
+(Gemma 3 / MedGemma, SmolVLM, and the ABIDE Hugging Face linear model) runs through
 the `OpacusDPTrainer` in this fork. The modifications implement the
 Feature-DP mechanism: per-sample gradients are decomposed into a *public*
 component (computed with the sensitive modality removed) and a *private
@@ -26,7 +26,7 @@ component determines the noise scale.
 
 | File | Purpose |
 | --- | --- |
-| `custom_trainer.py` | Vendored copy of the Hugging Face `transformers.Trainer` (Apache License 2.0, see THIRD_PARTY_NOTICES.md at the repository root) extended with a `public_batch` constructor argument. When enabled, the training loop feeds each private batch together with a *public* view of the same batch, and `compute_loss` forwards `public=` / `feature_dp=` keyword arguments into the model call. |
+| `custom_trainer.py` | Vendored copy of the Hugging Face `transformers.Trainer` (Apache License 2.0, see THIRD_PARTY_NOTICES.md at the repository root) extended with a `public_batch` constructor argument. When enabled, the training loop draws, for every private batch, an independently shuffled *public* batch of the same size from a second dataloader (two batches per step, as in Algorithm 3 of the paper), and `compute_loss` forwards `public=` / `feature_dp=` keyword arguments into the model call. |
 | `custom_dp_optimizer.py` | Reimplementation of Opacus's `DPOptimizer` with a `feature_dp` flag and `gradient_accumulation_steps` support. Per-sample clipping is performed in the trainer (the optimizer's clip factor is identity); `add_noise` adds Gaussian noise with `std = noise_multiplier * max_grad_norm`. |
 | `custom_ddp_optimizer.py` | Distributed (DDP) variant of the above. |
 | `custom_adam.py` | `CustomAdamW`: an AdamW variant that receives buffered *public* gradients separately from the noised *private* gradients in Feature-DP mode, so that only the private component is privatized. |

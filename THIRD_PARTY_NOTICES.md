@@ -117,6 +117,7 @@ download instructions, license terms, and required citations:
 
 | Model | Source | Terms |
 | --- | --- | --- |
-| MedGemma (`google/medgemma-4b-pt`) | Hugging Face Hub | Health AI Developer Foundations terms of use |
+| Gemma 3 4B (`google/gemma-3-4b-pt`) | Hugging Face Hub | Gemma Terms of Use |
+| MedGemma 4B (`google/medgemma-4b-pt`) | Hugging Face Hub | Health AI Developer Foundations terms of use |
 | SmolVLM | Hugging Face Hub | Apache License 2.0 |
 | EfficientNet-B3 (ImageNet weights) | torchvision | BSD 3-Clause (torchvision) |
